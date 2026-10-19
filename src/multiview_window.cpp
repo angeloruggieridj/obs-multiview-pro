@@ -362,6 +362,9 @@ void MultiviewWindow::mouseReleaseEvent(QMouseEvent *event)
 		QWidget::mouseReleaseEvent(event);
 		return;
 	}
+	/* Names are resolved below: bring them up to date first (a rename may not
+	 * have produced a scene-list event). */
+	sync_scene_names();
 	const bool was_dragging = m_dragging;
 	const int press_slot = m_press_slot;
 	m_press_active = false;
@@ -398,6 +401,7 @@ void MultiviewWindow::mouseDoubleClickEvent(QMouseEvent *event)
 	m_press_slot = -1;
 	if (!m_state)
 		return;
+	sync_scene_names();
 	const int slot = scene_slot_at(event->pos());
 	const std::string scene = slot >= 0 ? m_assignment.scene_for_slot(slot) : std::string();
 	if (!scene.empty())
@@ -429,6 +433,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 				/* The scene may have been deleted while the menu was open. */
 				if (!m_state)
 					return;
+				sync_scene_names();
 				for (const SceneRef &sc : m_state->scenes())
 					if (sc.name == name) {
 						m_assignment.assign(slot, name);
@@ -442,6 +447,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 		if (!current.empty()) {
 			QAction *rm = menu->addAction(tr("Remove scene from tile"));
 			connect(rm, &QAction::triggered, this, [this, slot] {
+				sync_scene_names();
 				m_assignment.remove(slot);
 				assignment_changed();
 			});
@@ -462,7 +468,9 @@ void MultiviewWindow::show_layout_picker(const QPoint &global_pos)
 	auto *picker = new PresetPicker(m_renderer->preset(), this);
 	connect(picker, &PresetPicker::preset_chosen, this, [this](Preset preset) {
 		if (m_renderer && m_state) {
-			/* Assignment first: set_preset refreshes the slots once. */
+			/* Assignment first: set_preset refreshes the slots once, by name,
+			 * so the names must be current. */
+			sync_scene_names();
 			m_assignment.set_slot_count(m_state->scenes(), scene_slot_count(preset));
 			m_renderer->set_preset(preset);
 		}

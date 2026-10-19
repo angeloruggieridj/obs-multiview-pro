@@ -188,3 +188,21 @@ TEST_CASE("state_assignment_set_slot_count_keeps_and_fills")
 	CHECK(a.scene_for_slot(2) == "C");
 	CHECK(a.scene_for_slot(3).empty());
 }
+
+TEST_CASE("state_assignment_assign_after_rename_keeps_id_for_next_rename")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B"});
+	v[0].id = "ida";
+	v[1].id = "idb";
+	TileAssignment a;
+	a.reset_from(v, 4);
+	/* B renamed; the window syncs (on_scene_list_changed) before resolving names. */
+	v[1].name = "B2";
+	a.on_scene_list_changed(v);
+	a.assign(3, "B2");
+	CHECK(a.scene_for_slot(1).empty());
+	CHECK(a.scene_for_slot(3) == "B2");
+	v[1].name = "B3";
+	a.on_scene_list_changed(v);
+	CHECK(a.scene_for_slot(3) == "B3");
+}
