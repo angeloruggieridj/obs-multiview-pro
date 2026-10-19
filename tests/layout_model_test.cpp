@@ -1,0 +1,207 @@
+#include "doctest.h"
+
+#include "layout_model.hpp"
+
+#include <vector>
+
+namespace {
+constexpr float kEps = 1e-5f;
+
+int count_kind(const std::vector<Tile> &tiles, TileKind kind)
+{
+	int n = 0;
+	for (const Tile &t : tiles)
+		if (t.kind == kind)
+			++n;
+	return n;
+}
+
+bool overlap(const RectF &a, const RectF &b)
+{
+	const bool sep_x = a.x + a.w <= b.x + kEps || b.x + b.w <= a.x + kEps;
+	const bool sep_y = a.y + a.h <= b.y + kEps || b.y + b.h <= a.y + kEps;
+	return !(sep_x || sep_y);
+}
+
+const Preset kAllPresets[] = {Preset::Scenes4, Preset::Scenes8, Preset::Scenes16, Preset::Scenes24,
+			      Preset::Scenes32};
+} // namespace
+
+TEST_CASE("layout_scenes8_has_one_pvw_one_pgm_eight_scenes")
+{
+	const auto tiles = build_layout(Preset::Scenes8);
+	CHECK(count_kind(tiles, TileKind::Preview) == 1);
+	CHECK(count_kind(tiles, TileKind::Program) == 1);
+	CHECK(count_kind(tiles, TileKind::Scene) == 8);
+	for (const Tile &t : tiles)
+		CHECK((t.kind == TileKind::Scene) == (t.scene_slot >= 0));
+}
+
+TEST_CASE("layout_scene_counts_per_preset")
+{
+	CHECK(count_kind(build_layout(Preset::Scenes4), TileKind::Scene) == 4);
+	CHECK(count_kind(build_layout(Preset::Scenes8), TileKind::Scene) == 8);
+	CHECK(count_kind(build_layout(Preset::Scenes16), TileKind::Scene) == 16);
+	CHECK(count_kind(build_layout(Preset::Scenes24), TileKind::Scene) == 24);
+	CHECK(count_kind(build_layout(Preset::Scenes32), TileKind::Scene) == 32);
+}
+
+TEST_CASE("layout_scene_slots_are_sequential")
+{
+	for (Preset p : kAllPresets) {
+		const auto tiles = build_layout(p);
+		int expected = 0;
+		for (const Tile &t : tiles) {
+			if (t.kind == TileKind::Scene) {
+				CHECK(t.scene_slot == expected);
+				++expected;
+			} else {
+				CHECK(t.scene_slot == -1);
+			}
+		}
+	}
+}
+
+TEST_CASE("layout_no_overlap_and_inside_unit_square")
+{
+	for (Preset p : kAllPresets) {
+		const auto tiles = build_layout(p);
+		for (size_t i = 0; i < tiles.size(); ++i) {
+			const RectF &r = tiles[i].rect;
+			CHECK(r.w > 0.f);
+			CHECK(r.h > 0.f);
+			CHECK(r.x >= -kEps);
+			CHECK(r.y >= -kEps);
+			CHECK(r.x + r.w <= 1.f + kEps);
+			CHECK(r.y + r.h <= 1.f + kEps);
+			for (size_t j = i + 1; j < tiles.size(); ++j)
+				CHECK_FALSE(overlap(r, tiles[j].rect));
+		}
+	}
+}
+
+TEST_CASE("layout_scenes8_matches_native_horizontal_top_8")
+{
+	const auto tiles = build_layout(Preset::Scenes8);
+	REQUIRE(tiles.size() == 10);
+	for (const Tile &t : tiles) {
+		switch (t.kind) {
+		case TileKind::Preview:
+			CHECK(t.rect.x == doctest::Approx(0.f));
+			CHECK(t.rect.y == doctest::Approx(0.f));
+			CHECK(t.rect.w == doctest::Approx(0.5f));
+			CHECK(t.rect.h == doctest::Approx(0.5f));
+			break;
+		case TileKind::Program:
+			CHECK(t.rect.x == doctest::Approx(0.5f));
+			CHECK(t.rect.y == doctest::Approx(0.f));
+			CHECK(t.rect.w == doctest::Approx(0.5f));
+			CHECK(t.rect.h == doctest::Approx(0.5f));
+			break;
+		case TileKind::Scene: {
+			const int i = t.scene_slot;
+			CHECK(t.rect.x == doctest::Approx((i % 4) * 0.25f));
+			CHECK(t.rect.y == doctest::Approx(0.5f + (i / 4) * 0.25f));
+			CHECK(t.rect.w == doctest::Approx(0.25f));
+			CHECK(t.rect.h == doctest::Approx(0.25f));
+			break;
+		}
+		}
+	}
+}
+
+TEST_CASE("layout_scenes24_matches_native_horizontal_top_24")
+{
+	const auto tiles = build_layout(Preset::Scenes24);
+	REQUIRE(tiles.size() == 26);
+	const float third = 1.f / 3.f;
+	const float sixth = 1.f / 6.f;
+	for (const Tile &t : tiles) {
+		switch (t.kind) {
+		case TileKind::Preview:
+			CHECK(t.rect.x == doctest::Approx(sixth));
+			CHECK(t.rect.y == doctest::Approx(0.f));
+			CHECK(t.rect.w == doctest::Approx(third));
+			CHECK(t.rect.h == doctest::Approx(third));
+			break;
+		case TileKind::Program:
+			CHECK(t.rect.x == doctest::Approx(0.5f));
+			CHECK(t.rect.y == doctest::Approx(0.f));
+			CHECK(t.rect.w == doctest::Approx(third));
+			CHECK(t.rect.h == doctest::Approx(third));
+			break;
+		case TileKind::Scene: {
+			const int i = t.scene_slot;
+			CHECK(t.rect.x == doctest::Approx((i % 6) * sixth));
+			CHECK(t.rect.y == doctest::Approx(third + (i / 6) * sixth));
+			CHECK(t.rect.w == doctest::Approx(sixth));
+			CHECK(t.rect.h == doctest::Approx(sixth));
+			break;
+		}
+		}
+	}
+}
+
+TEST_CASE("layout_hit_test_inside_tile_3")
+{
+	const auto tiles = build_layout(Preset::Scenes8);
+	REQUIRE(tiles.size() > 3);
+	const RectF &r3 = tiles[3].rect;
+	CHECK(hit_test(tiles, r3.x + r3.w / 2, r3.y + r3.h / 2) == 3);
+}
+
+TEST_CASE("layout_hit_test_outside_returns_minus_one")
+{
+	const auto tiles = build_layout(Preset::Scenes4); // bottom quarter unused
+	CHECK(hit_test(tiles, 0.5f, 0.95f) == -1);
+	CHECK(hit_test(tiles, -0.1f, 0.5f) == -1);
+	CHECK(hit_test(tiles, 1.5f, 0.5f) == -1);
+	CHECK(hit_test(tiles, 0.5f, -0.2f) == -1);
+	CHECK(hit_test({}, 0.5f, 0.5f) == -1);
+}
+
+TEST_CASE("layout_hit_test_shared_edge_returns_single_tile")
+{
+	const auto tiles = build_layout(Preset::Scenes8);
+	// x = 0.5 is shared by Preview and Program: the right tile owns the edge.
+	const int a = hit_test(tiles, 0.5f, 0.25f);
+	REQUIRE(a >= 0);
+	CHECK(tiles[a].kind == TileKind::Program);
+	// y = 0.5 is shared by the top row and the scenes: the lower tile owns it.
+	const int b = hit_test(tiles, 0.25f, 0.5f);
+	REQUIRE(b >= 0);
+	CHECK(tiles[b].kind == TileKind::Scene);
+	// The top-left corner of every tile belongs to exactly one tile.
+	for (const Tile &t : tiles) {
+		int hits = 0;
+		for (const Tile &o : tiles) {
+			const RectF &r = o.rect;
+			if (t.rect.x >= r.x && t.rect.x < r.x + r.w && t.rect.y >= r.y && t.rect.y < r.y + r.h)
+				++hits;
+		}
+		CHECK(hits == 1);
+		CHECK(hit_test(tiles, t.rect.x, t.rect.y) >= 0);
+	}
+}
+
+TEST_CASE("layout_fit_rect_16_9_in_square")
+{
+	const RectF r = fit_rect(16.f / 9, 1000, 1000);
+	CHECK(r.x == doctest::Approx(0.f));
+	CHECK(r.w == doctest::Approx(1000.f));
+	CHECK(r.h == doctest::Approx(562.5f));
+	CHECK(r.y == doctest::Approx((1000.f - 562.5f) / 2));
+}
+
+TEST_CASE("layout_fit_rect_pillarbox_and_degenerate")
+{
+	const RectF r = fit_rect(16.f / 9, 2000, 500);
+	CHECK(r.h == doctest::Approx(500.f));
+	CHECK(r.w == doctest::Approx(500.f * 16.f / 9));
+	CHECK(r.y == doctest::Approx(0.f));
+	CHECK(r.x == doctest::Approx((2000.f - r.w) / 2));
+
+	const RectF z = fit_rect(16.f / 9, 0, 0);
+	CHECK(z.w == doctest::Approx(0.f));
+	CHECK(z.h == doctest::Approx(0.f));
+}
