@@ -2,11 +2,15 @@
 #include "multiview_window.hpp"
 #include "multiview_renderer.hpp"
 #include "obs_state.hpp"
+#include "preset_picker.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
 
+#include <QAction>
+#include <QContextMenuEvent>
 #include <QEvent>
+#include <QMenu>
 #include <QPlatformSurfaceEvent>
 #include <QResizeEvent>
 #include <QScreen>
@@ -239,4 +243,35 @@ bool MultiviewWindow::eventFilter(QObject *watched, QEvent *event)
 			destroy_display();
 	}
 	return QWidget::eventFilter(watched, event);
+}
+
+void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
+{
+	auto *menu = new QMenu(this);
+	menu->setAttribute(Qt::WA_DeleteOnClose);
+	const QPoint global_pos = event->globalPos();
+	QAction *layout = menu->addAction(tr("Layout..."));
+	connect(layout, &QAction::triggered, this, [this, global_pos] { show_layout_picker(global_pos); });
+	menu->popup(global_pos);
+	event->accept();
+}
+
+void MultiviewWindow::show_layout_picker(const QPoint &global_pos)
+{
+	if (!m_renderer)
+		return;
+	auto *picker = new PresetPicker(m_renderer->preset(), this);
+	connect(picker, &PresetPicker::preset_chosen, this, [this](Preset preset) {
+		if (m_renderer)
+			m_renderer->set_preset(preset);
+	});
+	/* Keep the popup on the screen it opens on. */
+	QPoint pos = global_pos;
+	if (const QScreen *screen = this->screen()) {
+		const QRect avail = screen->availableGeometry();
+		pos.setX(qBound(avail.left(), pos.x(), qMax(avail.left(), avail.right() - picker->width())));
+		pos.setY(qBound(avail.top(), pos.y(), qMax(avail.top(), avail.bottom() - picker->height())));
+	}
+	picker->move(pos);
+	picker->show();
 }

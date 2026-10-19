@@ -38,3 +38,15 @@ std::vector<RectF> uncovered_areas(const std::vector<Tile> &tiles);
 /* Largest rect of aspect `canvas_aspect` centered in a cx x cy area
  * (letter/pillar box), like the native GetScaleAndCenterPos. */
 RectF fit_rect(float canvas_aspect, float cx, float cy);
+
+struct PixelRect {
+	int x;
+	int y;
+	int w;
+	int h;
+};
+
+/* Maps a normalized rect into a width x height pixel area. The edges are
+ * rounded (not the sizes), so tiles that share an edge in normalized space
+ * share it in pixels too: no gaps, no overlaps. */
+PixelRect to_pixel_rect(const RectF &r, int width, int height);

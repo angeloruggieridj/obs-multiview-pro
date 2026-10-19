@@ -40,6 +40,7 @@ public:
 	MultiviewRenderer &operator=(const MultiviewRenderer &) = delete;
 
 	void set_preset(Preset preset);
+	Preset preset() const { return m_preset; }
 
 	/* slot index -> scene name ("" = empty tile). Default: the i-th scene of
 	 * ObsState::scenes(). Passing an empty function restores the default. */

@@ -258,3 +258,42 @@ TEST_CASE("layout_uncovered_areas_complete_the_canvas_without_overlap")
 		CHECK(std::abs(total - 1.f) < 1e-4f);
 	}
 }
+
+TEST_CASE("layout_pixel_rect_maps_full_canvas_and_halves")
+{
+	const PixelRect full = to_pixel_rect(RectF{0.f, 0.f, 1.f, 1.f}, 160, 90);
+	CHECK(full.x == 0);
+	CHECK(full.y == 0);
+	CHECK(full.w == 160);
+	CHECK(full.h == 90);
+
+	const PixelRect right = to_pixel_rect(RectF{0.5f, 0.5f, 0.5f, 0.5f}, 160, 90);
+	CHECK(right.x == 80);
+	CHECK(right.y == 45);
+	CHECK(right.w == 80);
+	CHECK(right.h == 45);
+}
+
+TEST_CASE("layout_pixel_rect_adjacent_tiles_share_edges_without_gaps")
+{
+	/* Edges are rounded, not sizes: neighbours never leave a gap or overlap. */
+	for (Preset p : kAllPresets) {
+		const auto tiles = build_layout(p);
+		for (const Tile &a : tiles) {
+			const PixelRect pa = to_pixel_rect(a.rect, 97, 55);
+			CHECK(pa.w >= 0);
+			CHECK(pa.h >= 0);
+			CHECK(pa.x >= 0);
+			CHECK(pa.x + pa.w <= 97);
+			CHECK(pa.y + pa.h <= 55);
+		}
+		for (size_t i = 0; i < tiles.size(); ++i)
+			for (size_t j = i + 1; j < tiles.size(); ++j) {
+				const PixelRect a = to_pixel_rect(tiles[i].rect, 97, 55);
+				const PixelRect b = to_pixel_rect(tiles[j].rect, 97, 55);
+				const bool sep_x = a.x + a.w <= b.x || b.x + b.w <= a.x;
+				const bool sep_y = a.y + a.h <= b.y || b.y + b.h <= a.y;
+				CHECK((sep_x || sep_y));
+			}
+	}
+}

@@ -29,10 +29,12 @@ protected:
 	void moveEvent(QMoveEvent *event) override;
 	bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 	bool eventFilter(QObject *watched, QEvent *event) override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
 	static void draw_callback(void *param, uint32_t cx, uint32_t cy);
 
+	void show_layout_picker(const QPoint &global_pos);
 	void create_display();
 	void destroy_display();
 	void resize_display();

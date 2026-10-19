@@ -2,6 +2,7 @@
 #include "layout_model.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -124,4 +125,14 @@ std::vector<RectF> uncovered_areas(const std::vector<Tile> &tiles)
 			out.push_back({0.f, gy1, 1.f, 1.f - gy1});
 	}
 	return out;
+}
+
+PixelRect to_pixel_rect(const RectF &r, int width, int height)
+{
+	auto edge = [](float n, int size) { return static_cast<int>(std::lround(static_cast<double>(n) * size)); };
+	const int x0 = edge(r.x, width);
+	const int y0 = edge(r.y, height);
+	const int x1 = edge(r.x + r.w, width);
+	const int y1 = edge(r.y + r.h, height);
+	return {x0, y0, x1 - x0, y1 - y0};
 }
