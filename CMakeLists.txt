@@ -37,6 +37,7 @@ endif()
 target_sources(
   ${CMAKE_PROJECT_NAME}
   PRIVATE src/plugin.cpp src/multiview_window.cpp src/multiview_window.hpp
+    src/obs_state.cpp src/obs_state.hpp src/click_target.cpp src/click_target.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 
