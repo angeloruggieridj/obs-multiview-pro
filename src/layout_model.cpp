@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "layout_model.hpp"
 
+#include <algorithm>
+
 namespace {
 
 /* All layouts: PVW and PGM side by side on top (square in normalized units,
@@ -78,4 +80,48 @@ RectF fit_rect(float canvas_aspect, float cx, float cy)
 		w = cy * canvas_aspect;
 	}
 	return {(cx - w) / 2.f, (cy - h) / 2.f, w, h};
+}
+
+std::vector<RectF> uncovered_areas(const std::vector<Tile> &tiles)
+{
+	constexpr float eps = 1e-4f;
+	std::vector<RectF> out;
+
+	float top_l = 1.f, top_r = 0.f, top_h = 0.f;
+	float gx0 = 1.f, gy0 = 1.f, gx1 = 0.f, gy1 = 0.f;
+	bool has_top = false, has_grid = false;
+
+	for (const Tile &t : tiles) {
+		const RectF &r = t.rect;
+		if (t.kind == TileKind::Scene) {
+			has_grid = true;
+			gx0 = std::min(gx0, r.x);
+			gy0 = std::min(gy0, r.y);
+			gx1 = std::max(gx1, r.x + r.w);
+			gy1 = std::max(gy1, r.y + r.h);
+		} else {
+			has_top = true;
+			top_l = std::min(top_l, r.x);
+			top_r = std::max(top_r, r.x + r.w);
+			top_h = std::max(top_h, r.y + r.h);
+		}
+	}
+
+	if (has_top) {
+		if (top_l > eps)
+			out.push_back({0.f, 0.f, top_l, top_h});
+		if (top_r < 1.f - eps)
+			out.push_back({top_r, 0.f, 1.f - top_r, top_h});
+	}
+	if (has_grid) {
+		if (gy0 > top_h + eps)
+			out.push_back({0.f, top_h, 1.f, gy0 - top_h});
+		if (gx0 > eps)
+			out.push_back({0.f, gy0, gx0, gy1 - gy0});
+		if (gx1 < 1.f - eps)
+			out.push_back({gx1, gy0, 1.f - gx1, gy1 - gy0});
+		if (gy1 < 1.f - eps)
+			out.push_back({0.f, gy1, 1.f, 1.f - gy1});
+	}
+	return out;
 }

@@ -29,6 +29,12 @@ std::vector<Tile> build_layout(Preset preset);
  * [x, x+w) x [y, y+h), so a shared edge belongs to exactly one tile. */
 int hit_test(const std::vector<Tile> &tiles, float nx, float ny);
 
+/* Areas of the canvas covered by no tile, in normalized coordinates: beside
+ * the PVW/PGM pair, between that pair and the grid, beside and below the grid.
+ * The renderer paints them like the native 24-scene layout paints the areas
+ * beside PVW/PGM. Empty for layouts that fill the canvas. */
+std::vector<RectF> uncovered_areas(const std::vector<Tile> &tiles);
+
 /* Largest rect of aspect `canvas_aspect` centered in a cx x cy area
  * (letter/pillar box), like the native GetScaleAndCenterPos. */
 RectF fit_rect(float canvas_aspect, float cx, float cy);

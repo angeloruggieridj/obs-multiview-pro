@@ -2,6 +2,7 @@
 
 #include "layout_model.hpp"
 
+#include <cmath>
 #include <vector>
 
 namespace {
@@ -204,4 +205,56 @@ TEST_CASE("layout_fit_rect_pillarbox_and_degenerate")
 	const RectF z = fit_rect(16.f / 9, 0, 0);
 	CHECK(z.w == doctest::Approx(0.f));
 	CHECK(z.h == doctest::Approx(0.f));
+}
+
+namespace {
+bool rect_eq(const RectF &a, const RectF &b)
+{
+	return std::abs(a.x - b.x) < 1e-4f && std::abs(a.y - b.y) < 1e-4f && std::abs(a.w - b.w) < 1e-4f &&
+	       std::abs(a.h - b.h) < 1e-4f;
+}
+
+float area(const RectF &r)
+{
+	return r.w * r.h;
+}
+} // namespace
+
+TEST_CASE("layout_uncovered_scenes8_and_scenes32_are_full")
+{
+	CHECK(uncovered_areas(build_layout(Preset::Scenes8)).empty());
+	CHECK(uncovered_areas(build_layout(Preset::Scenes32)).empty());
+}
+
+TEST_CASE("layout_uncovered_scenes24_matches_native_side_regions")
+{
+	/* Native HORIZONTAL_TOP_24_SCENES paints the two areas beside PVW/PGM. */
+	const auto fillers = uncovered_areas(build_layout(Preset::Scenes24));
+	REQUIRE(fillers.size() == 2);
+	CHECK(rect_eq(fillers[0], {0.f, 0.f, 1.f / 6, 1.f / 3}));
+	CHECK(rect_eq(fillers[1], {5.f / 6, 0.f, 1.f / 6, 1.f / 3}));
+}
+
+TEST_CASE("layout_uncovered_scenes4_is_bottom_strip")
+{
+	const auto fillers = uncovered_areas(build_layout(Preset::Scenes4));
+	REQUIRE(fillers.size() == 1);
+	CHECK(rect_eq(fillers[0], {0.f, 0.75f, 1.f, 0.25f}));
+}
+
+TEST_CASE("layout_uncovered_areas_complete_the_canvas_without_overlap")
+{
+	for (Preset p : kAllPresets) {
+		const auto tiles = build_layout(p);
+		const auto fillers = uncovered_areas(tiles);
+		float total = 0.f;
+		for (const Tile &t : tiles)
+			total += area(t.rect);
+		for (const RectF &f : fillers) {
+			total += area(f);
+			for (const Tile &t : tiles)
+				CHECK_FALSE(overlap(f, t.rect));
+		}
+		CHECK(std::abs(total - 1.f) < 1e-4f);
+	}
 }
