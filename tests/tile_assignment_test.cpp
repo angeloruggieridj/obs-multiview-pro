@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include "doctest.h"
+
+#include "tile_assignment.hpp"
+
+static std::vector<SceneRef> scenes_named(std::initializer_list<const char *> names)
+{
+	std::vector<SceneRef> v;
+	for (const char *n : names) {
+		SceneRef s;
+		s.name = n;
+		v.push_back(s);
+	}
+	return v;
+}
+
+TEST_CASE("state_assignment_reset_from_fills_first_slots")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C"}), 8);
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1) == "B");
+	CHECK(a.scene_for_slot(2) == "C");
+	for (int i = 3; i < 8; ++i)
+		CHECK(a.scene_for_slot(i).empty());
+}
+
+TEST_CASE("state_assignment_reset_from_more_scenes_than_slots")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C", "D"}), 2);
+	CHECK(a.scene_for_slot(1) == "B");
+	CHECK(a.scene_for_slot(2).empty());
+}
+
+TEST_CASE("state_assignment_reset_from_skips_hidden_scenes")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B", "C"});
+	v[1].visible_in_multiview = false;
+	TileAssignment a;
+	a.reset_from(v, 4);
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1) == "C");
+	CHECK(a.scene_for_slot(2).empty());
+}
+
+TEST_CASE("state_assignment_swap_exchanges")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C"}), 8);
+	a.swap(0, 2);
+	CHECK(a.scene_for_slot(0) == "C");
+	CHECK(a.scene_for_slot(1) == "B");
+	CHECK(a.scene_for_slot(2) == "A");
+}
+
+TEST_CASE("state_assignment_swap_with_empty_moves")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A"}), 4);
+	a.swap(0, 3);
+	CHECK(a.scene_for_slot(0).empty());
+	CHECK(a.scene_for_slot(3) == "A");
+}
+
+TEST_CASE("state_assignment_remove_empties_only_that_slot")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C"}), 8);
+	a.remove(1);
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1).empty());
+	CHECK(a.scene_for_slot(2) == "C");
+}
+
+TEST_CASE("state_assignment_assign_sets_and_moves_existing")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C"}), 8);
+	a.assign(5, "X");
+	CHECK(a.scene_for_slot(5) == "X");
+	/* "A" already sits in slot 0: the two slots swap, no duplicate. */
+	a.assign(2, "A");
+	CHECK(a.scene_for_slot(2) == "A");
+	CHECK(a.scene_for_slot(0) == "C");
+	/* Assigning to an empty slot a scene shown elsewhere moves it. */
+	a.assign(7, "B");
+	CHECK(a.scene_for_slot(7) == "B");
+	CHECK(a.scene_for_slot(1).empty());
+	/* Assigning the scene a slot already has changes nothing. */
+	a.assign(7, "B");
+	CHECK(a.scene_for_slot(7) == "B");
+	a.assign(7, "");
+	CHECK(a.scene_for_slot(7).empty());
+}
+
+TEST_CASE("state_assignment_out_of_range_is_noop")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B"}), 4);
+	a.assign(-1, "Z");
+	a.assign(4, "Z");
+	a.swap(0, 9);
+	a.swap(-3, 1);
+	a.remove(12);
+	a.remove(-1);
+	CHECK(a.scene_for_slot(-1).empty());
+	CHECK(a.scene_for_slot(4).empty());
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1) == "B");
+	CHECK(a.scene_for_slot(2).empty());
+}
+
+TEST_CASE("state_assignment_no_scenes")
+{
+	TileAssignment a;
+	a.reset_from({}, 8);
+	for (int i = 0; i < 8; ++i)
+		CHECK(a.scene_for_slot(i).empty());
+	a.on_scene_list_changed({});
+	a.swap(0, 1);
+	CHECK(a.scene_for_slot(0).empty());
+}
+
+TEST_CASE("state_assignment_scene_deleted_empties_only_its_slot")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B", "C"}), 8);
+	a.on_scene_list_changed(scenes_named({"A", "C"}));
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1).empty());
+	CHECK(a.scene_for_slot(2) == "C");
+}
+
+TEST_CASE("state_assignment_new_scene_is_not_auto_placed")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A"}), 4);
+	a.on_scene_list_changed(scenes_named({"A", "N"}));
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1).empty());
+}
+
+TEST_CASE("state_assignment_hidden_assigned_scene_survives_list_change")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A"}), 4);
+	a.assign(2, "H");
+	std::vector<SceneRef> v = scenes_named({"A", "H"});
+	v[1].visible_in_multiview = false;
+	a.on_scene_list_changed(v);
+	CHECK(a.scene_for_slot(2) == "H");
+}
+
+TEST_CASE("state_assignment_rename_follows_by_id")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B"});
+	v[0].id = "ida";
+	v[1].id = "idb";
+	TileAssignment a;
+	a.reset_from(v, 4);
+	v[1].name = "B2";
+	a.on_scene_list_changed(v);
+	CHECK(a.scene_for_slot(1) == "B2");
+	CHECK(a.scene_for_slot(0) == "A");
+}
+
+TEST_CASE("state_assignment_rename_without_id_empties_slot")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B"}), 4);
+	a.on_scene_list_changed(scenes_named({"A", "B2"}));
+	CHECK(a.scene_for_slot(1).empty());
+}
+
+TEST_CASE("state_assignment_set_slot_count_keeps_and_fills")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B", "C", "D", "E"});
+	TileAssignment a;
+	a.reset_from(v, 2);
+	a.swap(0, 1); /* B A */
+	a.set_slot_count(v, 4);
+	CHECK(a.scene_for_slot(0) == "B");
+	CHECK(a.scene_for_slot(1) == "A");
+	CHECK(a.scene_for_slot(2) == "C");
+	CHECK(a.scene_for_slot(3) == "D");
+	a.set_slot_count(v, 3);
+	CHECK(a.scene_for_slot(2) == "C");
+	CHECK(a.scene_for_slot(3).empty());
+}

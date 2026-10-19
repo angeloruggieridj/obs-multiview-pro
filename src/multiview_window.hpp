@@ -3,6 +3,9 @@
 
 #include <obs.h>
 
+#include "tile_assignment.hpp"
+
+#include <QPoint>
 #include <QWidget>
 
 #include <cstdint>
@@ -30,20 +33,38 @@ protected:
 	bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 	bool eventFilter(QObject *watched, QEvent *event) override;
 	void contextMenuEvent(QContextMenuEvent *event) override;
+	void mousePressEvent(QMouseEvent *event) override;
+	void mouseMoveEvent(QMouseEvent *event) override;
+	void mouseReleaseEvent(QMouseEvent *event) override;
+	void mouseDoubleClickEvent(QMouseEvent *event) override;
 
 private:
 	static void draw_callback(void *param, uint32_t cx, uint32_t cy);
 
 	void show_layout_picker(const QPoint &global_pos);
+	/* Scene slot under a widget position (letterbox and devicePixelRatio
+	 * accounted for), or -1 for PVW / PGM / outside every tile. */
+	int scene_slot_at(const QPoint &pos) const;
+	void sync_scene_names();
+	void on_scenes_changed();
+	void on_scene_collection_changed();
+	void assignment_changed();
 	void create_display();
 	void destroy_display();
 	void resize_display();
 	void update_color_space();
 	QSize pixel_size() const;
 
+	TileAssignment m_assignment; /* UI thread only */
 	std::unique_ptr<ObsState> m_state;
 	std::unique_ptr<MultiviewRenderer> m_renderer;
 	obs_display_t *m_display = nullptr;
 	bool m_destroying = false;
 	bool m_window_handle_warned = false;
+
+	/* Left-button press / drag state (drag and drop between tiles). */
+	bool m_press_active = false;
+	bool m_dragging = false;
+	int m_press_slot = -1;
+	QPoint m_press_pos;
 };

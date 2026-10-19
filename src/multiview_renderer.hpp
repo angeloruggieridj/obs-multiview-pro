@@ -46,6 +46,11 @@ public:
 	 * ObsState::scenes(). Passing an empty function restores the default. */
 	void set_scene_for_slot(SceneForSlot scene_for_slot);
 
+	/* UI thread. Re-resolves the scene of every slot (the SceneForSlot
+	 * function is called here, on the UI thread only, never from render())
+	 * and publishes a new snapshot. Call after the mapping changed. */
+	void refresh_scenes();
+
 	/* Graphics thread, from the display draw callback. */
 	void render(uint32_t cx, uint32_t cy);
 
@@ -72,7 +77,6 @@ private:
 		~RenderSnapshot();
 	};
 
-	void refresh_scenes();  /* re-resolve slot scenes, then rebuild */
 	void rebuild_snapshot(); /* outlines / studio mode / preview */
 	void release_showing();
 	void publish(std::shared_ptr<const RenderSnapshot> snapshot);
