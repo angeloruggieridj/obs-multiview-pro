@@ -29,6 +29,8 @@ struct StatusTileImage {
  * Mixer: `mixer` null (audio meters off) draws the dark placeholder. Else a
  * black tile with, per column, its name above and its value below the place
  * where the renderer draws the two bars (mixer_geometry on the tile's own
- * pixel size; the names are elided to the column width). */
+ * pixel size; the names are elided to the column width). `mixer_opacity`
+ * (0..100) is the opacity of those names and values. */
 std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h,
-							  const std::vector<MixerColumnView> *mixer = nullptr);
+							  const std::vector<MixerColumnView> *mixer = nullptr,
+							  int mixer_opacity = 100);

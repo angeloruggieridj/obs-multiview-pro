@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "meter_scale.hpp"
 
+#include "appearance.hpp"
+
 #include <QColor>
 #include <QFont>
 #include <QFontMetricsF>
@@ -13,7 +15,7 @@
 #include <cmath>
 #include <cstring>
 
-std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g, int w, int h)
+std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g, int w, int h, int opacity_percent)
 {
 	if (w <= 0 || h <= 0 || g.scale.w <= 0.f || g.column.w <= 0.f || g.column.h <= 0.f)
 		return nullptr;
@@ -33,6 +35,8 @@ std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g
 	{
 		QPainter p(&img);
 		p.setRenderHint(QPainter::TextAntialiasing);
+		if (opacity_percent < 100)
+			p.setOpacity(double(clamp_percent(opacity_percent)) / 100.0);
 		QFont f(
 #if defined(_WIN32)
 			QStringLiteral("Arial")

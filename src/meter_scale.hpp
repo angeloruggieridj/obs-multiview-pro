@@ -21,5 +21,5 @@ struct MeterScaleImage {
 /* UI thread only (QPainter / QFont). `g` is in canvas pixels; the image is
  * w x h texels for g.column (display pixels, so text is crisp). nullptr when
  * the size is empty or there is no scale in `g`. Text smaller than 6 px is
- * left out (unreadable). */
-std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g, int w, int h);
+ * left out (unreadable). The text is drawn at `opacity_percent` (0..100). */
+std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g, int w, int h, int opacity_percent = 100);

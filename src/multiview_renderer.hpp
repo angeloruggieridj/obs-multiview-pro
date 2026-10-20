@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "appearance.hpp"
 #include "audio_meter.hpp"
 #include "label_cache.hpp"
 #include "label_metrics.hpp"
@@ -94,7 +95,7 @@ class MultiviewRenderer : public QObject {
 public:
 	using SceneForSlot = std::function<std::string(int)>;
 
-	explicit MultiviewRenderer(ObsState &state);
+	explicit MultiviewRenderer(ObsState &state, const Appearance &appearance = Appearance());
 	~MultiviewRenderer() override;
 
 	MultiviewRenderer(const MultiviewRenderer &) = delete;
@@ -139,6 +140,14 @@ public:
 	/* UI thread. The latest StatusSnapshot (StatusMonitor). Rebuilds the
 	 * status tiles whose text changed; a no-op for layouts without them. */
 	void set_status(const StatusSnapshot &status);
+
+	/* UI thread. The frame colour, the label opacity and the meter opacity
+	 * (see Appearance). They reach the graphics thread in the next snapshot:
+	 * the frame colour and the meter opacity are applied at draw time; the
+	 * label text and the dB / mixer texts are re-rasterized once, only when
+	 * their opacity actually changes. */
+	void set_appearance(const Appearance &appearance);
+	Appearance appearance() const { return m_appearance; }
 
 	/* Graphics thread, from the display draw callback. */
 	void render(uint32_t cx, uint32_t cy);
@@ -253,6 +262,10 @@ private:
 		std::shared_ptr<const StatusBatch> status; /* null: no status tiles */
 		std::shared_ptr<const MeterScaleBatch> meter_scale; /* null: meters off / no room */
 		std::shared_ptr<const MixerDraw> mixer; /* null: meters off / no mixer tile */
+		/* From the Appearance when the snapshot was built. */
+		uint32_t border_argb = 0xFF000000u | kDefaultBorderRgb; /* frame under the tiles */
+		uint32_t label_box_argb = 0x33000000;                   /* label background boxes */
+		int meter_opacity = kDefaultMeterOpacity;               /* percent */
 		uint32_t canvas_cx = 0; /* canvas the labels were laid out for */
 		uint32_t canvas_cy = 0;
 
@@ -304,6 +317,7 @@ private:
 	void publish(std::shared_ptr<const RenderSnapshot> snapshot);
 
 	ObsState &m_state;
+	Appearance m_appearance;
 	Preset m_preset = Preset::Scenes8;
 	std::vector<Tile> m_tiles;
 	std::vector<RectF> m_fillers;
@@ -335,6 +349,7 @@ private:
 		int h = 0;
 		StatusSnapshot content;
 		bool mixer_on = false;               /* Mixer: drawn with columns */
+		int mixer_opacity = 100;             /* Mixer: opacity of the names / values */
 		std::vector<MixerColumnView> mixer;  /* Mixer: what the columns show */
 		std::shared_ptr<const StatusTileImage> image;
 	};

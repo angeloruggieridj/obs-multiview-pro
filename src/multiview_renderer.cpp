@@ -14,12 +14,12 @@
 
 namespace {
 
-/* Copied verbatim from OBS 32.1 frontend/components/Multiview.hpp (ARGB). */
-constexpr uint32_t outerColor = 0xFF999999;
+/* Copied verbatim from OBS 32.1 frontend/components/Multiview.hpp (ARGB).
+ * outerColor (0xFF999999) is the default Appearance border colour; labelColor
+ * is the default label box (Appearance label_box_argb(50)). */
 constexpr uint32_t backgroundColor = 0xFF000000;
 constexpr uint32_t previewColor = 0xFF00D000;
 constexpr uint32_t programColor = 0xFFD00000;
-constexpr uint32_t labelColor = 0x33000000;
 /* Outline thickness in canvas pixels, as Multiview::thickness. */
 constexpr float thickness = kLabelThickness;
 constexpr float thicknessx2 = thickness * 2.0f;
@@ -98,7 +98,8 @@ MultiviewRenderer::RenderSnapshot::~RenderSnapshot()
 	obs_weak_source_release(preview);
 }
 
-MultiviewRenderer::MultiviewRenderer(ObsState &state) : m_state(state)
+MultiviewRenderer::MultiviewRenderer(ObsState &state, const Appearance &appearance)
+	: m_state(state), m_appearance(normalized(appearance))
 {
 	/* The canvas size has no frontend event, and labels depend on it (font
 	 * size, placement): check it once per second (one struct copy). */
@@ -152,6 +153,15 @@ void MultiviewRenderer::set_scene_for_slot(SceneForSlot scene_for_slot)
 		return;
 	m_scene_for_slot = std::move(scene_for_slot);
 	refresh_scenes();
+}
+
+void MultiviewRenderer::set_appearance(const Appearance &appearance)
+{
+	const Appearance a = normalized(appearance);
+	if (m_shut_down || a == m_appearance)
+		return;
+	m_appearance = a;
+	rebuild_snapshot();
 }
 
 void MultiviewRenderer::refresh_scenes()
@@ -208,6 +218,9 @@ void MultiviewRenderer::rebuild_snapshot()
 	snap->tiles = m_tiles;
 	snap->fillers = m_fillers;
 	snap->studio_mode = m_state.studio_mode();
+	snap->border_argb = border_argb(m_appearance);
+	snap->label_box_argb = label_box_argb(m_appearance.label_opacity);
+	snap->meter_opacity = m_appearance.meter_opacity;
 
 	const std::string program = m_state.program_scene();
 	const std::string preview = snap->studio_mode ? m_state.preview_scene() : std::string();
@@ -227,7 +240,7 @@ void MultiviewRenderer::rebuild_snapshot()
 		else if (snap->studio_mode && name == preview)
 			e.border = previewColor;
 		else
-			e.border = outerColor;
+			e.border = snap->border_argb;
 	}
 
 	if (snap->studio_mode)
@@ -275,8 +288,14 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 	m_canvas_cy = ovi.base_height;
 	snap.canvas_cx = ovi.base_width;
 	snap.canvas_cy = ovi.base_height;
+	/* Opacity 0: no labels at all (and nothing to click). */
+	if (m_appearance.label_opacity <= 0) {
+		finish();
+		return;
+	}
 	const float fw = float(ovi.base_width);
 	const float fh = float(ovi.base_height);
+	const int text_alpha = label_text_alpha(m_appearance.label_opacity);
 
 	/* Same canvas rect as render() computes for the tile. */
 	auto canvas_rect = [&](const RectF &r) {
@@ -327,7 +346,7 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		const RectF r = canvas_rect(t.rect);
 		const int face = label_face_size(ovi.base_height, pvw_pgm);
 		std::shared_ptr<const LabelImage> img =
-			m_labels.get(text, face, label_max_cx(r.w, scale), scale, map.sx);
+			m_labels.get(text, face, label_max_cx(r.w, scale), scale, map.sx, text_alpha);
 		if (!img)
 			continue;
 		const LabelGeometry g = label_geometry(r, img->size, scale);
@@ -497,7 +516,8 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 			for (const StatusCacheEntry &old : m_status_cache)
 				if (old.kind == t.kind && old.w == w && old.h == h && old.image &&
 				    status_tile_content_equal(t.kind, old.content, m_status) &&
-				    (t.kind != TileKind::Mixer || (old.mixer_on == mixer_on && old.mixer == mixer_view))) {
+				    (t.kind != TileKind::Mixer || (old.mixer_on == mixer_on && old.mixer == mixer_view &&
+								    old.mixer_opacity == m_appearance.meter_opacity))) {
 					entry = old;
 					break;
 				}
@@ -509,8 +529,10 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 				if (t.kind == TileKind::Mixer) {
 					entry.mixer_on = mixer_on;
 					entry.mixer = mixer_view;
+					entry.mixer_opacity = m_appearance.meter_opacity;
 				}
-				entry.image = render_status_tile(t.kind, m_status, w, h, mixer_on ? &mixer_view : nullptr);
+				entry.image = render_status_tile(t.kind, m_status, w, h, mixer_on ? &mixer_view : nullptr,
+								 m_appearance.meter_opacity);
 			}
 			if (!entry.image)
 				continue;
@@ -753,9 +775,10 @@ void MultiviewRenderer::build_meter_scale(RenderSnapshot &snap)
 					      dev.y,
 					      int(std::lround(g.column.w * 16.f)),
 					      int(std::lround(g.column.h * 16.f)),
-					      int(std::lround(g.bar[0].h * 16.f))};
+					      int(std::lround(g.bar[0].h * 16.f)),
+					      m_appearance.meter_opacity};
 		if (!m_scale_batch || key != m_scale_key) {
-			auto image = render_meter_scale(g, w, h);
+			auto image = render_meter_scale(g, w, h, m_appearance.meter_opacity);
 			if (!image) {
 				m_scale_batch = nullptr;
 			} else {
@@ -1043,9 +1066,9 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 		gs_matrix_pop();
 	};
 
-	/* Whole usable region, background in the outline grey. */
+	/* Whole usable region, background in the border colour. */
 	start_region(x, y, int(float(targetCX) * scale), int(float(targetCY) * scale), 0.0f, fw, 0.0f, fh);
-	drawBox(fw, fh, outerColor);
+	drawBox(fw, fh, snap->border_argb);
 
 	for (const Tile &t : snap->tiles) {
 		const float sx = snap_px(t.rect.x * fw);
@@ -1069,8 +1092,8 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 				src = nullptr;
 			}
 
-			/* The canvas is already outerColor: only paint highlights. */
-			if (src && e->border != outerColor)
+			/* The canvas is already the border colour: only paint highlights. */
+			if (src && e->border != snap->border_argb)
 				paintAreaWithColor(sx, sy, scx, scy, e->border);
 			paintAreaWithColor(ix, iy, iw, ih, backgroundColor);
 
@@ -1145,7 +1168,7 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 	draw_meters(*snap, fw, fh, labels_ok);
 
 	/* Labels last (each sits inside its own tile, so the order does not change
-	 * the picture), all in two draws: the labelColor boxes, then the text from
+	 * the picture), all in two draws: the label boxes, then the text from
 	 * the atlas drawn like the native text source's Render (default effect,
 	 * sRGB framebuffer). Geometry is in canvas coordinates, like the boxes. */
 	if (!snap->labels) {
@@ -1154,7 +1177,7 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 	} else if (labels_ok && upload_labels(*snap->labels)) {
 		gs_load_indexbuffer(nullptr);
 
-		gs_effect_set_color(color, labelColor);
+		gs_effect_set_color(color, snap->label_box_argb);
 		gs_load_vertexbuffer(m_gfx.boxes);
 		while (gs_effect_loop(solid, "Solid"))
 			gs_draw(GS_TRIS, 0, m_gfx.box_vertices);
@@ -1238,7 +1261,12 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	 *
 	 * A rect between two edges, each rounded to a canvas pixel: neighbours that
 	 * share an edge share the pixel row, so the runs of a bar leave no seam. */
+	const int opacity = snap.meter_opacity;
 	auto fill = [&](float x0, float y0, float x1, float y1, uint32_t argb) {
+		if (opacity <= 0)
+			return;
+		if (opacity < 100)
+			argb = scale_alpha(argb, opacity);
 		const long ix0 = std::lround(x0), iy0 = std::lround(y0);
 		const long pw = std::lround(x1) - ix0, ph = std::lround(y1) - iy0;
 		if (pw <= 0 || ph <= 0)
@@ -1308,7 +1336,7 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	/* dB numbers and L / R captions: one textured quad, the same path as the
 	 * label text. */
 	const MeterScaleBatch *sb = snap.meter_scale.get();
-	if (!sb || !scale_drawn || !labels_ok || !upload_scale(*sb)) {
+	if (!sb || !scale_drawn || !labels_ok || opacity <= 0 || !upload_scale(*sb)) {
 		if (!sb && m_gfx_scale.id)
 			destroy_gfx_scale();
 		return;

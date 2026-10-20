@@ -18,9 +18,6 @@ namespace {
  * themselves are drawn later at the true device size (see render()). */
 constexpr int kRefPixelSize = 256;
 
-/* Native text source: color 0xFFFFFF, opacity 50 -> alpha 50 * 255 / 100. */
-constexpr int kTextAlpha = 50 * 255 / 100;
-
 /* Hinting of the device-size glyphs: vertical only keeps the baseline and the
  * stems of small text on pixel rows while the advances stay linear, so a label
  * is as wide as the layout measured it. */
@@ -52,16 +49,17 @@ QFont make_label_font()
 LabelCache::LabelCache() : m_font(make_label_font()) {}
 
 std::shared_ptr<const LabelImage> LabelCache::get(const QString &text, int face_size, int max_cx,
-						  const LabelScale &scale, float display_scale)
+						  const LabelScale &scale, float display_scale, int text_alpha)
 {
 	if (text.isEmpty() || face_size <= 0 || max_cx <= 0)
 		return nullptr;
+	text_alpha = std::max(0, std::min(255, text_alpha));
 
 	const Key key{text, face_size, max_cx, std::lround(double(scale.x) * display_scale * 10000.0),
-		      std::lround(double(scale.y) * display_scale * 10000.0)};
+		      std::lround(double(scale.y) * display_scale * 10000.0), text_alpha};
 	auto it = m_entries.find(key);
 	if (it == m_entries.end())
-		it = m_entries.emplace(key, Entry{render(text, face_size, max_cx, scale, display_scale), false}).first;
+		it = m_entries.emplace(key, Entry{render(text, face_size, max_cx, scale, display_scale, text_alpha), false}).first;
 	it->second.used = true;
 	return it->second.image;
 }
@@ -79,7 +77,7 @@ void LabelCache::prune()
 }
 
 std::shared_ptr<const LabelImage> LabelCache::render(const QString &text, int face_size, int max_cx,
-						     const LabelScale &scale, float display_scale)
+						     const LabelScale &scale, float display_scale, int text_alpha)
 {
 	const QFontMetricsF fm(m_font);
 	const qreal cell = fm.ascent() + fm.descent();
@@ -150,7 +148,7 @@ std::shared_ptr<const LabelImage> LabelCache::render(const QString &text, int fa
 		p.setFont(dev_font);
 		p.setPen(Qt::white);
 		/* Opacity instead of a translucent pen so colour emoji fade too. */
-		p.setOpacity(kTextAlpha / 255.0);
+		p.setOpacity(text_alpha / 255.0);
 		p.drawText(QPoint(text_x, baseline), line);
 	}
 

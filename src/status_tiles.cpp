@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "status_tiles.hpp"
 
+#include "appearance.hpp"
 #include "audio_meter_math.hpp"
 
 #include <QColor>
@@ -144,8 +145,10 @@ QColor value_color(MixerValueStyle style)
  * (computed here for the image's own size: the layout is proportional, so it
  * matches the bars drawn in canvas pixels). Font sizes: 80% of the row, the
  * name shortened to what fits (elide_name), the value shrunk to fit. */
-void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &cols)
+void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &cols, int opacity)
 {
+	if (opacity < 100)
+		p.setOpacity(double(clamp_percent(opacity)) / 100.0);
 	const std::vector<MixerColumnGeometry> geo = mixer_geometry({0.f, 0.f, float(w), float(h)}, cols.size());
 	for (size_t i = 0; i < geo.size(); ++i) {
 		const MixerColumnGeometry &g = geo[i];
@@ -192,7 +195,7 @@ void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &c
 } // namespace
 
 std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h,
-							  const std::vector<MixerColumnView> *mixer)
+							  const std::vector<MixerColumnView> *mixer, int mixer_opacity)
 {
 	if (w <= 0 || h <= 0)
 		return nullptr;
@@ -237,7 +240,7 @@ std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const S
 			break;
 		default:
 			if (mixer)
-				draw_mixer(p, w, h, *mixer);
+				draw_mixer(p, w, h, *mixer, mixer_opacity);
 			else
 				draw_mixer_placeholder(d);
 			break;

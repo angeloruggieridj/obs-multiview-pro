@@ -23,36 +23,37 @@ struct LabelImage {
 
 /* Draws label text with Qt into images, the way the native label text source
  * looks (OBS 32.1 Multiview CreateLabel: " name ", bold Arial / Helvetica /
- * Monospace, cell height = face size, white at 50% opacity, no outline), elided
+ * Monospace, cell height = face size, white at the configured opacity (50% natively), no outline), elided
  * with "…" to fit. Qt picks fallback fonts for glyphs the face lacks (other
  * scripts, emoji).
  *
  * UI thread only (QFont / QPainter). Lookups are keyed by (text, face size,
- * max width, raster scale), so a label is redrawn only when one of them
- * changes. */
+ * max width, raster scale, text alpha), so a label is redrawn only when one of
+ * them changes. */
 class LabelCache {
 public:
 	LabelCache();
 
 	/* Image for `text` at native face size `face_size` (label_face_size),
 	 * elided to `max_cx` label px, rasterized for `display_scale` display px
-	 * per canvas px. nullptr for an empty text or when not even "…" fits. */
+	 * per canvas px, white text at `text_alpha` (0..255; the native look is
+	 * 127). nullptr for an empty text or when not even "…" fits. */
 	std::shared_ptr<const LabelImage> get(const QString &text, int face_size, int max_cx, const LabelScale &scale,
-					      float display_scale);
+					      float display_scale, int text_alpha);
 
 	/* Forgets every entry that get() did not return since the previous
 	 * prune(). Images still held by snapshots stay alive until those go. */
 	void prune();
 
 private:
-	using Key = std::tuple<QString, int, int, long, long>;
+	using Key = std::tuple<QString, int, int, long, long, int>;
 	struct Entry {
 		std::shared_ptr<const LabelImage> image; /* may be null (nothing to show) */
 		bool used = false;
 	};
 
 	std::shared_ptr<const LabelImage> render(const QString &text, int face_size, int max_cx,
-						 const LabelScale &scale, float display_scale);
+						 const LabelScale &scale, float display_scale, int text_alpha);
 
 	QFont m_font; /* reference size: measuring only, glyphs use a device-size copy */
 	std::map<Key, Entry> m_entries;
