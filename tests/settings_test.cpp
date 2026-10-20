@@ -435,3 +435,92 @@ TEST_CASE("state_settings_collections_are_capped_to_the_most_recent")
 	CHECK(big.collections.size() == kMaxCollectionsStored);
 	CHECK(to_json(file).size() < kMaxSettingsBytes);
 }
+
+/* ---- Global appearance ---------------------------------------------------- */
+
+static Appearance custom_appearance()
+{
+	Appearance a;
+	a.border_rgb = 0x336699;
+	a.label_opacity = 20;
+	a.meter_opacity = 40;
+	return a;
+}
+
+TEST_CASE("state_settings_appearance_roundtrip")
+{
+	SettingsFile f;
+	f.appearance = custom_appearance();
+	f.instances[1] = sample();
+	ParseStatus st = ParseStatus::Corrupt;
+	const std::string json = to_json(f);
+	CHECK(json.find("\"border_color\": \"#336699\"") != std::string::npos);
+	const SettingsFile back = from_json(json, &st);
+	CHECK(st == ParseStatus::Ok);
+	CHECK(back == f);
+	CHECK(back.appearance == custom_appearance());
+	CHECK(to_json(back) == json);
+}
+
+TEST_CASE("state_settings_appearance_missing_section_gives_defaults")
+{
+	/* Every file written before the section existed. */
+	const SettingsFile a = from_json("{\"version\":1,\"instances\":{\"0\":{\"preset\":\"scenes4\"}}}");
+	CHECK(a.appearance == Appearance());
+	CHECK(a.instances.at(0).preset == Preset::Scenes4);
+	CHECK(from_json("{\"version\":1}").appearance == Appearance());
+	CHECK(from_json("{\"version\":1,\"global\":{}}").appearance == Appearance());
+	CHECK(from_json("{\"version\":1,\"global\":{\"appearance\":{}}}").appearance == Appearance());
+	CHECK(from_json("").appearance == Appearance());
+}
+
+TEST_CASE("state_settings_appearance_hostile_values")
+{
+	auto load = [](const std::string &body) {
+		ParseStatus st = ParseStatus::Corrupt;
+		const SettingsFile f = from_json("{\"version\":1,\"global\":{\"appearance\":{" + body + "}}}", &st);
+		CHECK(st == ParseStatus::Ok);
+		return f.appearance;
+	};
+	Appearance a = load("\"border_color\":\"#GGGGGG\",\"label_opacity\":500,\"meter_opacity\":-3");
+	CHECK(a.border_rgb == Appearance().border_rgb);
+	CHECK(a.label_opacity == 100);
+	CHECK(a.meter_opacity == 0);
+
+	a = load("\"border_color\":12,\"label_opacity\":\"abc\",\"meter_opacity\":true");
+	CHECK(a == Appearance());
+	a = load("\"border_color\":null,\"label_opacity\":null,\"meter_opacity\":[1]");
+	CHECK(a == Appearance());
+	a = load("\"border_color\":\"\",\"label_opacity\":1e999,\"meter_opacity\":-1e999");
+	CHECK(a.border_rgb == Appearance().border_rgb);
+	CHECK(a.label_opacity == 100);
+	CHECK(a.meter_opacity == 0);
+	a = load("\"label_opacity\":33.6,\"meter_opacity\":99999999999999999999");
+	CHECK(a.label_opacity == 34);
+	CHECK(a.meter_opacity == 100);
+	a = load("\"border_color\":\"abcdef\"");
+	CHECK(a.border_rgb == 0xABCDEFu);
+	a = load("\"border_color\":\"" + std::string(5000, 'f') + "\"");
+	CHECK(a.border_rgb == Appearance().border_rgb);
+	/* unknown keys are tolerated, duplicates: the last one wins */
+	a = load("\"future\":{\"x\":1},\"label_opacity\":10,\"label_opacity\":70");
+	CHECK(a.label_opacity == 70);
+	/* wrong container types */
+	CHECK(from_json("{\"version\":1,\"global\":[1,2]}").appearance == Appearance());
+	CHECK(from_json("{\"version\":1,\"global\":{\"appearance\":\"x\"}}").appearance == Appearance());
+	CHECK(from_json("{\"version\":1,\"global\":5,\"instances\":{\"0\":{\"meters\":false}}}").instances.at(0).meters ==
+	      false);
+}
+
+TEST_CASE("state_settings_appearance_does_not_disturb_instances")
+{
+	SettingsFile f;
+	f.appearance = custom_appearance();
+	f.instances[0] = sample();
+	f.instances[5] = sample();
+	CHECK(from_json(to_json(f)).instances == f.instances);
+	/* the section is only part of equality */
+	SettingsFile g = f;
+	g.appearance.label_opacity = 21;
+	CHECK(f != g);
+}

@@ -5,6 +5,8 @@
 //
 // File model (version 1):
 //   { "version": 1,
+//     "global": { "appearance": { "border_color": "#999999", "label_opacity": 50,
+//                                 "meter_opacity": 100 } },
 //     "instances": { "0": { "preset": "scenes8", "safe_areas": true,
 //                           "meters": true,
 //                           "collections": { "<collection>": ["scene"|null, ...] } } } }
@@ -16,6 +18,7 @@
 // valid file, a field of the wrong type falls back to its default and unknown
 // keys are ignored.
 
+#include "appearance.hpp"
 #include "layout_model.hpp"
 
 #include <cstddef>
@@ -53,8 +56,9 @@ struct WindowSettings {
 
 struct SettingsFile {
 	std::map<int, WindowSettings> instances; /* window instance index -> settings */
+	Appearance appearance;                   /* global, shared by every window */
 
-	bool operator==(const SettingsFile &o) const { return instances == o.instances; }
+	bool operator==(const SettingsFile &o) const { return instances == o.instances && appearance == o.appearance; }
 	bool operator!=(const SettingsFile &o) const { return !(*this == o); }
 };
 
@@ -92,12 +96,13 @@ LoadAction decide_load(LoadOutcome outcome, ParseStatus status);
  * kept while max_collections >= 1). Keeps the file below the reader's size cap. */
 void note_collection_saved(WindowSettings &w, const std::string &name, size_t max_collections = kMaxCollectionsStored);
 
-/* Puts the entries of `overlay` over `base`: the options (preset, safe areas,
+/* Puts the entries of `overlay` over `base`: the appearance when
+ * `overlay_appearance_touched`; the options (preset, safe areas,
  * meters) of an instance are taken from `overlay` only when its
  * options_touched is set; collections are merged by name (overlay wins).
  * Used when a file that was unreadable at first can be read later and the
  * changes made meanwhile must be applied to it. */
-void merge_settings(SettingsFile &base, const SettingsFile &overlay);
+void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched = false);
 
 /* Assignments may be saved only when no scene collection switch is in progress
  * and the window's collection is still the current one: during a switch the

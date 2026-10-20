@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <utility>
 
 namespace {
@@ -491,6 +492,33 @@ WindowSettings window_from_value(const JValue &obj)
 	return w;
 }
 
+/* A JSON number as a percentage: rounded, clamped to [0, 100]. Any other type
+ * keeps `fallback`. */
+int percent_from_value(const JValue *v, int fallback)
+{
+	if (!v || v->type != JValue::Number)
+		return fallback;
+	const double d = std::strtod(v->s.c_str(), nullptr);
+	if (!(d > 0.0))
+		return 0; /* also NaN */
+	if (d >= 100.0)
+		return 100;
+	return clamp_percent(static_cast<long long>(d + 0.5));
+}
+
+Appearance appearance_from_value(const JValue &obj)
+{
+	Appearance a;
+	if (const JValue *v = obj.find("border_color"); v && v->type == JValue::String) {
+		uint32_t rgb;
+		if (parse_color(v->s, rgb))
+			a.border_rgb = rgb;
+	}
+	a.label_opacity = percent_from_value(obj.find("label_opacity"), a.label_opacity);
+	a.meter_opacity = percent_from_value(obj.find("meter_opacity"), a.meter_opacity);
+	return a;
+}
+
 } // namespace
 
 const char *preset_name(Preset preset)
@@ -511,7 +539,12 @@ Preset preset_from_name(const std::string &name)
 
 std::string to_json(const SettingsFile &file)
 {
-	std::string out = "{\n  \"version\": 1,\n  \"instances\": {";
+	const Appearance app = normalized(file.appearance);
+	std::string out = "{\n  \"version\": 1,\n  \"global\": {\n    \"appearance\": {\n";
+	out += "      \"border_color\": \"" + format_color(app.border_rgb) + "\",\n";
+	out += "      \"label_opacity\": " + std::to_string(app.label_opacity) + ",\n";
+	out += "      \"meter_opacity\": " + std::to_string(app.meter_opacity) + "\n";
+	out += "    }\n  },\n  \"instances\": {";
 	bool first_instance = true;
 	for (const auto &inst : file.instances) {
 		if (inst.first < 0 || inst.first >= kMaxInstances)
@@ -574,6 +607,10 @@ SettingsFile from_json(const std::string &json, ParseStatus *status)
 		return fail(ParseStatus::WrongVersion);
 
 	SettingsFile file;
+	if (const JValue *global = root.find("global"); global && global->type == JValue::Object) {
+		if (const JValue *app = global->find("appearance"); app && app->type == JValue::Object)
+			file.appearance = appearance_from_value(*app);
+	}
 	if (const JValue *insts = root.find("instances"); insts && insts->type == JValue::Object) {
 		for (size_t i = 0; i < insts->keys.size(); ++i) {
 			const int idx = parse_instance_key(insts->keys[i]);
@@ -626,8 +663,10 @@ void note_collection_saved(WindowSettings &w, const std::string &name, size_t ma
 	w.collection_order = std::move(order);
 }
 
-void merge_settings(SettingsFile &base, const SettingsFile &overlay)
+void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched)
 {
+	if (overlay_appearance_touched)
+		base.appearance = overlay.appearance;
 	for (const auto &inst : overlay.instances) {
 		WindowSettings &dst = base.instances[inst.first];
 		if (inst.second.options_touched) {

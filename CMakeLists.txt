@@ -47,6 +47,7 @@ target_sources(
     src/meter_scale.cpp src/meter_scale.hpp
     src/mixer_columns.cpp src/mixer_columns.hpp src/mixer_feeds.cpp src/mixer_feeds.hpp
     src/settings.cpp src/settings.hpp src/settings_store.cpp src/settings_store.hpp
+    src/appearance.cpp src/appearance.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 
