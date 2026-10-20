@@ -46,6 +46,7 @@ target_sources(
     src/audio_meter_math.cpp src/audio_meter_math.hpp src/audio_meter.cpp src/audio_meter.hpp
     src/meter_scale.cpp src/meter_scale.hpp
     src/mixer_columns.cpp src/mixer_columns.hpp src/mixer_feeds.cpp src/mixer_feeds.hpp
+    src/settings.cpp src/settings.hpp src/settings_store.cpp src/settings_store.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 

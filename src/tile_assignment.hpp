@@ -24,6 +24,16 @@ public:
 	 * the multiview, in order; the other slots stay empty. */
 	void reset_from(const std::vector<SceneRef> &scenes, int slot_count);
 
+	/* Slot names 0..count-1 ("" = empty), for persistence. */
+	std::vector<std::string> names(int count) const;
+
+	/* Restores saved names (`saved[i]` = scene of slot i, "" = empty). Names
+	 * that are not a visible scene of `scenes`, or that repeat, leave their
+	 * slot empty (no phantom slot, nothing shifts). Slots past the end of
+	 * `saved` (the layout grew since it was saved) take, in order, visible
+	 * scenes not shown yet, as set_slot_count does. */
+	void load(const std::vector<SceneRef> &scenes, const std::vector<std::string> &saved, int slot_count);
+
 	/* Preset change: keeps the assignments of slots that still exist (no
 	 * reshuffle). Added slots take, in order, visible scenes not shown yet;
 	 * removed slots are dropped. */

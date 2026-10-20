@@ -4,8 +4,10 @@
 #include "multiview_renderer.hpp"
 #include "obs_state.hpp"
 #include "preset_picker.hpp"
+#include "settings_store.hpp"
 #include "status_monitor.hpp"
 
+#include <obs-frontend-api.h>
 #include <obs-module.h>
 #include <plugin-support.h>
 
@@ -43,7 +45,15 @@ static int scene_slot_count(Preset preset)
 	return n;
 }
 
-MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
+static std::string current_collection_name()
+{
+	char *name = obs_frontend_get_current_scene_collection();
+	std::string out = name ? name : "";
+	bfree(name);
+	return out;
+}
+
+MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent, Qt::Window), m_instance(instance)
 {
 	/* Same attributes as OBS's OBSQTDisplay (all public Qt API). */
 	setAttribute(Qt::WA_PaintOnScreen);
@@ -67,7 +77,16 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 	connect(m_state.get(), &ObsState::scene_collection_changed, this,
 		&MultiviewWindow::on_scene_collection_changed);
 	m_renderer = std::make_unique<MultiviewRenderer>(*m_state);
-	m_assignment.reset_from(m_state->scenes(), scene_slot_count(m_renderer->preset()));
+	/* Saved options first (the slot count depends on the preset), then the
+	 * saved assignment of the current scene collection. Nothing is written
+	 * until the user changes something. */
+	{
+		const WindowSettings saved = SettingsStore::instance().get(m_instance);
+		m_renderer->set_audio_meters(saved.meters);
+		m_renderer->set_safe_areas(saved.safe_areas);
+		m_renderer->set_preset(saved.preset);
+		load_assignment();
+	}
 	/* Called only on the UI thread, from MultiviewRenderer::refresh_scenes. */
 	m_renderer->set_scene_for_slot([this](int slot) { return m_assignment.scene_for_slot(slot); });
 
@@ -122,6 +141,10 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 
 MultiviewWindow::~MultiviewWindow()
 {
+	/* Final save, before anything is torn down: the store already holds every
+	 * change, this writes the pending ones now (the OBS exit path closes the
+	 * windows synchronously). */
+	SettingsStore::instance().flush();
 	m_destroying = true;
 	m_label_scale_timer.stop();
 	/* 1. Stop drawing: removing the draw callback blocks until a callback that
@@ -335,10 +358,17 @@ int MultiviewWindow::label_slot_at(const QPoint &pos) const
 	return m_renderer->label_slot_at(cx, cy);
 }
 
-void MultiviewWindow::assignment_changed()
+void MultiviewWindow::assignment_changed_no_save()
 {
 	if (m_renderer)
 		m_renderer->refresh_scenes();
+}
+
+/* Every user-driven change of the assignment goes through here. */
+void MultiviewWindow::assignment_changed()
+{
+	assignment_changed_no_save();
+	save_assignment();
 }
 
 /* Re-syncs the slot names (by source UUID) with the scene list. Scene renames
@@ -365,16 +395,59 @@ void MultiviewWindow::sync_scene_names()
 void MultiviewWindow::on_scenes_changed()
 {
 	/* The renderer refreshes itself from the same signal. */
-	if (m_state)
-		m_assignment.on_scene_list_changed(m_state->scenes());
+	if (!m_state || !m_renderer)
+		return;
+	const int count = scene_slot_count(m_renderer->preset());
+	const std::vector<std::string> before = m_assignment.names(count);
+	m_assignment.on_scene_list_changed(m_state->scenes());
+	/* A rename follows the new name in the file. A scene that disappeared is
+	 * not written here: during a collection switch or at exit the list is
+	 * transiently empty, and the saved name is ignored on load anyway if the
+	 * scene is really gone. */
+	const std::vector<std::string> after = m_assignment.names(count);
+	for (size_t i = 0; i < after.size(); ++i)
+		if (!before[i].empty() && !after[i].empty() && before[i] != after[i]) {
+			save_assignment();
+			break;
+		}
 }
 
 void MultiviewWindow::on_scene_collection_changed()
 {
 	if (!m_state || !m_renderer)
 		return;
-	m_assignment.reset_from(m_state->scenes(), scene_slot_count(m_renderer->preset()));
-	assignment_changed();
+	/* The assignment of the new collection (default fill when it has none).
+	 * The old one was saved with every change, nothing to write here. */
+	load_assignment();
+	assignment_changed_no_save();
+}
+
+void MultiviewWindow::load_assignment()
+{
+	const int count = scene_slot_count(m_renderer->preset());
+	m_collection = current_collection_name();
+	const WindowSettings saved = SettingsStore::instance().get(m_instance);
+	const auto it = saved.collections.find(m_collection);
+	if (it != saved.collections.end())
+		m_assignment.load(m_state->scenes(), it->second, count);
+	else
+		m_assignment.reset_from(m_state->scenes(), count);
+}
+
+void MultiviewWindow::save_options()
+{
+	if (!m_renderer)
+		return;
+	SettingsStore::instance().set_options(m_instance, m_renderer->preset(), m_renderer->safe_areas(),
+					      m_renderer->audio_meters());
+}
+
+void MultiviewWindow::save_assignment()
+{
+	if (!m_renderer)
+		return;
+	SettingsStore::instance().set_assignment(m_instance, m_collection,
+						 m_assignment.names(scene_slot_count(m_renderer->preset())));
 }
 
 void MultiviewWindow::mousePressEvent(QMouseEvent *event)
@@ -507,15 +580,19 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 		meters->setCheckable(true);
 		meters->setChecked(m_renderer->audio_meters());
 		connect(meters, &QAction::toggled, this, [this](bool on) {
-			if (m_renderer)
+			if (m_renderer) {
 				m_renderer->set_audio_meters(on);
+				save_options();
+			}
 		});
 		QAction *safe = menu->addAction(tr("Safe areas"));
 		safe->setCheckable(true);
 		safe->setChecked(m_renderer->safe_areas());
 		connect(safe, &QAction::toggled, this, [this](bool on) {
-			if (m_renderer)
+			if (m_renderer) {
 				m_renderer->set_safe_areas(on);
+				save_options();
+			}
 		});
 	}
 	menu->popup(global_pos);
@@ -575,6 +652,8 @@ void MultiviewWindow::apply_preset(Preset preset)
 	if (m_monitor)
 		m_monitor->set_enabled(preset_has_status(preset));
 	m_renderer->set_preset(preset);
+	save_options();
+	save_assignment();
 }
 
 void MultiviewWindow::show_layout_picker(const QPoint &global_pos)

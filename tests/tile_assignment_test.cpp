@@ -242,3 +242,87 @@ TEST_CASE("state_assignment_switching_between_plain_and_status_presets_keeps_sur
 	CHECK(a.scene_for_slot(2).empty());
 	CHECK(a.scene_for_slot(3) == "D");
 }
+
+TEST_CASE("state_assignment_names_lists_slots_in_order")
+{
+	TileAssignment a;
+	a.reset_from(scenes_named({"A", "B"}), 4);
+	const std::vector<std::string> expect = {"A", "B", "", ""};
+	CHECK(a.names(4) == expect);
+	/* Beyond the slot count: empty entries, never out of range. */
+	CHECK(a.names(6).size() == 6);
+	CHECK(a.names(0).empty());
+	CHECK(a.names(-3).empty());
+}
+
+TEST_CASE("state_assignment_load_restores_saved_names")
+{
+	TileAssignment a;
+	a.load(scenes_named({"A", "B", "C", "D"}), {"D", "", "A", ""}, 4);
+	CHECK(a.scene_for_slot(0) == "D");
+	CHECK(a.scene_for_slot(1).empty()); /* an empty slot stays empty */
+	CHECK(a.scene_for_slot(2) == "A");
+	CHECK(a.scene_for_slot(3).empty());
+}
+
+TEST_CASE("state_assignment_load_ignores_scenes_that_no_longer_exist")
+{
+	TileAssignment a;
+	a.load(scenes_named({"A", "C"}), {"A", "Gone", "C", "Gone"}, 4);
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1).empty()); /* no phantom slot, no shifting */
+	CHECK(a.scene_for_slot(2) == "C");
+	CHECK(a.scene_for_slot(3).empty());
+}
+
+TEST_CASE("state_assignment_load_ignores_duplicates_and_hidden_scenes")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B", "H"});
+	v[2].visible_in_multiview = false;
+	TileAssignment a;
+	a.load(v, {"A", "A", "H", "B"}, 4);
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1).empty());
+	CHECK(a.scene_for_slot(2).empty());
+	CHECK(a.scene_for_slot(3) == "B");
+}
+
+TEST_CASE("state_assignment_load_shorter_list_fills_added_slots_with_unseen_scenes")
+{
+	TileAssignment a;
+	a.load(scenes_named({"A", "B", "C", "D"}), {"C", ""}, 4);
+	CHECK(a.scene_for_slot(0) == "C");
+	CHECK(a.scene_for_slot(1).empty());
+	CHECK(a.scene_for_slot(2) == "A"); /* slots past the saved list: not-yet-shown scenes */
+	CHECK(a.scene_for_slot(3) == "B");
+}
+
+TEST_CASE("state_assignment_load_longer_list_is_truncated")
+{
+	TileAssignment a;
+	a.load(scenes_named({"A", "B", "C"}), {"A", "B", "C"}, 2);
+	CHECK(a.scene_for_slot(1) == "B");
+	CHECK(a.scene_for_slot(2).empty());
+	CHECK(a.names(3).size() == 3);
+}
+
+TEST_CASE("state_assignment_load_keeps_ids_so_renames_still_follow")
+{
+	std::vector<SceneRef> v = scenes_named({"A", "B"});
+	v[0].id = "id-a";
+	v[1].id = "id-b";
+	TileAssignment a;
+	a.load(v, {"A", "B"}, 2);
+	v[0].name = "A renamed";
+	a.on_scene_list_changed(v);
+	CHECK(a.scene_for_slot(0) == "A renamed");
+}
+
+TEST_CASE("state_assignment_load_with_no_scenes_or_no_slots")
+{
+	TileAssignment a;
+	a.load({}, {"A"}, 3);
+	CHECK(a.scene_for_slot(0).empty());
+	a.load(scenes_named({"A"}), {"A"}, 0);
+	CHECK(a.scene_for_slot(0).empty());
+}

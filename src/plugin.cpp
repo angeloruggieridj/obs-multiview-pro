@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "multiview_window.hpp"
+#include "settings_store.hpp"
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
@@ -30,13 +31,30 @@ static void close_all_windows()
 	}
 }
 
+/* Lowest instance index not used by an open window. Settings are saved under
+ * this index; a closed window frees its index and the next window to take it
+ * finds those settings again. */
+static int lowest_free_instance()
+{
+	for (int index = 0;; ++index) {
+		bool used = false;
+		for (const auto &w : g_windows)
+			if (w && w->instance() == index) {
+				used = true;
+				break;
+			}
+		if (!used)
+			return index;
+	}
+}
+
 static void open_multiview_window()
 {
-	/* Parentless top-level window: it can live on any screen. Deleted on close. */
-	auto *window = new MultiviewWindow(nullptr);
 	g_windows.erase(std::remove_if(g_windows.begin(), g_windows.end(),
 				       [](const QPointer<MultiviewWindow> &w) { return w.isNull(); }),
 			g_windows.end());
+	/* Parentless top-level window: it can live on any screen. Deleted on close. */
+	auto *window = new MultiviewWindow(lowest_free_instance(), nullptr);
 	g_windows.emplace_back(window);
 	window->show();
 }
@@ -76,5 +94,6 @@ void obs_module_unload(void)
 	g_connection = QMetaObject::Connection();
 	g_action.clear();
 	close_all_windows();
+	SettingsStore::shutdown(); /* after the windows: their final saves are flushed */
 	obs_log(LOG_INFO, "plugin unloaded");
 }

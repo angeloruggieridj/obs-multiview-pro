@@ -25,10 +25,14 @@ class MultiviewWindow : public QWidget {
 	Q_OBJECT
 
 public:
-	explicit MultiviewWindow(QWidget *parent = nullptr);
+	/* `instance`: index of this window among the open ones (0..N, the lowest
+	 * free one, chosen by plugin.cpp); its settings are saved under it. */
+	explicit MultiviewWindow(int instance, QWidget *parent = nullptr);
 	~MultiviewWindow() override;
 
 	QPaintEngine *paintEngine() const override;
+
+	int instance() const { return m_instance; }
 
 protected:
 	void paintEvent(QPaintEvent *event) override;
@@ -65,12 +69,20 @@ private:
 	void on_scenes_changed();
 	void on_scene_collection_changed();
 	void assignment_changed();
+	void assignment_changed_no_save();
+	/* Persistence (SettingsStore: debounced write, final flush on close). */
+	void save_options();
+	void save_assignment();
+	void load_assignment();
 	void create_display();
 	void destroy_display();
 	void resize_display();
 	void update_color_space();
 	QSize pixel_size() const;
 
+	const int m_instance;
+	/* Scene collection the assignment belongs to (the settings key). */
+	std::string m_collection;
 	TileAssignment m_assignment; /* UI thread only */
 	std::unique_ptr<ObsState> m_state;
 	std::unique_ptr<MultiviewRenderer> m_renderer;

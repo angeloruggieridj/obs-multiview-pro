@@ -72,6 +72,39 @@ void TileAssignment::reset_from(const std::vector<SceneRef> &scenes, int slot_co
 	}
 }
 
+std::vector<std::string> TileAssignment::names(int count) const
+{
+	std::vector<std::string> out;
+	for (int i = 0; i < count; ++i)
+		out.push_back(scene_for_slot(i));
+	return out;
+}
+
+void TileAssignment::load(const std::vector<SceneRef> &scenes, const std::vector<std::string> &saved, int slot_count)
+{
+	m_known = scenes;
+	m_slots.assign(slot_count > 0 ? static_cast<size_t>(slot_count) : 0, Slot());
+	const size_t in_range = saved.size() < m_slots.size() ? saved.size() : m_slots.size();
+	for (size_t i = 0; i < in_range; ++i) {
+		if (saved[i].empty() || find_slot(saved[i]) >= 0)
+			continue;
+		for (const SceneRef &s : scenes) {
+			if (s.name == saved[i] && s.visible_in_multiview) {
+				m_slots[i] = Slot{s.name, s.id};
+				break;
+			}
+		}
+	}
+	size_t next = in_range;
+	for (const SceneRef &s : scenes) {
+		if (next >= m_slots.size())
+			break;
+		if (!s.visible_in_multiview || s.name.empty() || find_slot(s.name) >= 0)
+			continue;
+		m_slots[next++] = Slot{s.name, s.id};
+	}
+}
+
 void TileAssignment::set_slot_count(const std::vector<SceneRef> &scenes, int slot_count)
 {
 	m_known = scenes;
