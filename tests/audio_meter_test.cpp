@@ -259,15 +259,41 @@ TEST_CASE("audio_meter_atomic_max")
 	CHECK(a.load() == -10.f);
 }
 
-TEST_CASE("audio_meter_input_after_gap_drops_peaks_of_a_long_gap")
+TEST_CASE("audio_meter_frame_step_resets_after_a_long_gap")
 {
-	CHECK(meter_input_after_gap(-3.f, 0.016f) == -3.f);
-	CHECK(meter_input_after_gap(-3.f, kMeterMaxDt) == -3.f);
-	CHECK(meter_input_after_gap(-3.f, kMeterMaxDt + 0.01f) == kMeterFloorDb);
-	CHECK(meter_input_after_gap(-3.f, 30.f) == kMeterFloorDb);
-	/* after a long gap the bar and hold do not jump to the gap's peak */
+	/* a state that held -3 dB with a running hold age */
 	ChannelBallistics b;
-	ballistics_step(b, meter_input_after_gap(-3.f, 30.f), 30.f);
-	CHECK(b.peak_db == kMeterFloorDb);
-	CHECK(b.hold_db == kMeterFloorDb);
+	ballistics_step(b, -3.f, 0.016f);
+	ballistics_step(b, kMeterFloorDb, 0.5f);
+	REQUIRE(b.hold_db == -3.f);
+	REQUIRE(b.hold_age > 0.f);
+
+	/* a normal frame behaves like ballistics_step */
+	ChannelBallistics n = b;
+	meter_frame_step(n, kMeterFloorDb, 0.016f);
+	ChannelBallistics ref = b;
+	ballistics_step(ref, kMeterFloorDb, 0.016f);
+	CHECK(n.peak_db == ref.peak_db);
+	CHECK(n.hold_db == ref.hold_db);
+	CHECK(n.hold_age == ref.hold_age);
+
+	/* exactly the cap is still a normal frame */
+	ChannelBallistics e = b;
+	meter_frame_step(e, kMeterFloorDb, kMeterMaxDt);
+	CHECK(e.hold_db == -3.f);
+
+	/* a longer gap: the old state and the peaks of the gap are both gone */
+	ChannelBallistics g = b;
+	meter_frame_step(g, -1.f, kMeterMaxDt + 0.01f);
+	CHECK(g.peak_db == kMeterFloorDb);
+	CHECK(g.hold_db == kMeterFloorDb);
+	CHECK(g.hold_age == 0.f);
+	ChannelBallistics h = b;
+	meter_frame_step(h, -1.f, 300.f);
+	CHECK(h.peak_db == kMeterFloorDb);
+	CHECK(h.hold_db == kMeterFloorDb);
+	/* the next normal frame works from the reset state */
+	meter_frame_step(h, -20.f, 0.016f);
+	CHECK(h.peak_db == -20.f);
+	CHECK(h.hold_db == -20.f);
 }

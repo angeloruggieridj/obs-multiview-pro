@@ -218,8 +218,8 @@ void AudioMeter::attach_program_mix()
 	 * the UI thread, before the callback exists. The same callback / param
 	 * pair is only ever registered once (detach() above). */
 	const audio_t *audio = obs_get_audio();
-	const size_t channels = audio ? audio_output_get_channels(audio) : 2;
-	m_channels.store(channels >= 1 ? static_cast<int>(channels) : 2, std::memory_order_relaxed);
+	const size_t channels = audio ? audio_output_get_channels(audio) : 1;
+	m_channels.store(channels >= 1 ? static_cast<int>(channels) : 1, std::memory_order_relaxed);
 	audio_convert_info conv = {};
 	conv.samples_per_sec = 0; /* output rate */
 	conv.format = AUDIO_FORMAT_FLOAT_PLANAR;

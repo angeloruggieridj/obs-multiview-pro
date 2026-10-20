@@ -41,9 +41,13 @@ void ballistics_step(ChannelBallistics &b, float input_db, float dt, float decay
 	}
 }
 
-float meter_input_after_gap(float input_db, float dt)
+void meter_frame_step(ChannelBallistics &b, float input_db, float dt, float decay, float hold_s)
 {
-	return (dt == dt && dt > kMeterMaxDt) ? kMeterFloorDb : input_db;
+	if (dt == dt && dt > kMeterMaxDt) {
+		b = ChannelBallistics();
+		input_db = kMeterFloorDb;
+	}
+	ballistics_step(b, input_db, dt, decay, hold_s);
 }
 
 int meter_segments(float fraction, MeterSegment out[3])

@@ -60,12 +60,13 @@ struct ChannelBallistics {
 void ballistics_step(ChannelBallistics &b, float input_db, float dt, float decay = kMeterDecayDbPerSec,
 		     float hold_s = kMeterPeakHoldSec);
 
-/* The level to feed ballistics_step after a frame gap of `dt` seconds: the
- * peaks collected during a gap longer than kMeterMaxDt (display hidden or
- * minimised, nothing consuming them) are not what was shown "now", so they are
- * dropped (the floor) instead of flashing the loudest value of the whole gap
- * and holding it. Otherwise `input_db` unchanged. */
-float meter_input_after_gap(float input_db, float dt);
+/* One display frame of a channel, `dt` seconds after the previous one. Like
+ * ballistics_step, except after a gap longer than kMeterMaxDt (display hidden
+ * or minimised, nothing consuming the peaks): the state is reset and the peaks
+ * collected during the gap are dropped, so neither the loudest value of the
+ * gap nor a peak-hold tick from before it is shown as current. */
+void meter_frame_step(ChannelBallistics &b, float input_db, float dt, float decay = kMeterDecayDbPerSec,
+		      float hold_s = kMeterPeakHoldSec);
 
 enum class MeterZone { Nominal, Warning, Error };
 
