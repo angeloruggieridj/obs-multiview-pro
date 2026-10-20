@@ -268,9 +268,11 @@ private:
 		float x;
 		float y;
 		LabelScale scale;
+		RectF text; /* canvas: the text texture on whole device pixels */
 		bool operator==(const PlacedLabel &o) const
 		{
-			return image == o.image && x == o.x && y == o.y && scale.x == o.scale.x && scale.y == o.scale.y;
+			return image == o.image && x == o.x && y == o.y && scale.x == o.scale.x && scale.y == o.scale.y &&
+			       text.x == o.text.x && text.y == o.text.y && text.w == o.text.w && text.h == o.text.h;
 		}
 	};
 
@@ -288,7 +290,7 @@ private:
 	/* UI thread: (re)attaches the audio feeds to what is on air / in preview. */
 	void refresh_audio();
 	void poll_preview_audio();
-	float display_scale(float fw, float fh) const;
+	DeviceMap display_map(float fw, float fh) const;
 	void check_canvas();
 	/* Graphics thread only (or with the draw callback gone, in graphics). */
 	bool upload_labels(const LabelBatch &batch);

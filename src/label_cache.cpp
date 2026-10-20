@@ -1,22 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "label_cache.hpp"
 
+#include <QFontMetrics>
 #include <QFontMetricsF>
 #include <QImage>
 #include <QPainter>
 #include <QtGlobal>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
 namespace {
 
-/* Glyphs are measured and drawn at this pixel size and scaled to the target:
- * metrics then scale linearly and a label looks the same at every size. */
+/* The layout (label size, elision) is measured with this font at a large pixel
+ * size and scaled linearly, so it is the same at every window size. The glyphs
+ * themselves are drawn later at the true device size (see render()). */
 constexpr int kRefPixelSize = 256;
 
 /* Native text source: color 0xFFFFFF, opacity 50 -> alpha 50 * 255 / 100. */
 constexpr int kTextAlpha = 50 * 255 / 100;
+
+/* Hinting of the device-size glyphs: vertical only keeps the baseline and the
+ * stems of small text on pixel rows while the advances stay linear, so a label
+ * is as wide as the layout measured it. */
+constexpr QFont::HintingPreference kDeviceHinting = QFont::PreferVerticalHinting;
 
 QFont make_label_font()
 {
@@ -33,6 +41,7 @@ QFont make_label_font()
 #endif
 	f.setBold(true);
 	f.setPixelSize(kRefPixelSize);
+	/* Only measured: hinting would add rounding noise to the scaled metrics. */
 	f.setHintingPreference(QFont::PreferNoHinting);
 	return f;
 }
@@ -101,21 +110,47 @@ std::shared_ptr<const LabelImage> LabelCache::render(const QString &text, int fa
 
 	const LabelRaster raster = label_raster(size, scale, display_scale);
 
+	/* The glyphs are drawn at their final size: a hinted font whose pixel size is
+	 * the on-screen glyph size, at whole-pixel positions, into a texture the
+	 * renderer maps 1:1 onto device pixels. Nothing is scaled afterwards, so the
+	 * stems stay on the pixel grid instead of being resampled from big outlines. */
+	const QString padded = space + shown + space;
+	int font_px = label_font_px(face_size, qreal(kRefPixelSize) / cell, scale.y * display_scale);
+	const int min_px = std::max(1, font_px * 85 / 100);
+	QFont dev_font = m_font;
+	dev_font.setHintingPreference(kDeviceHinting);
+	/* Hinted advances are not exactly the scaled reference ones: take a pixel
+	 * off the size (down to 85%) before cutting letters from the name. */
+	for (;; --font_px) {
+		dev_font.setPixelSize(font_px);
+		if (font_px <= min_px || QFontMetrics(dev_font).horizontalAdvance(padded) <= raster.w)
+			break;
+	}
+	const QFontMetrics dm(dev_font);
+	const int pad_px = dm.horizontalAdvance(space) * 2;
+
+	QString drawn = shown;
+	if (dm.horizontalAdvance(padded) > raster.w) {
+		const QString cut = dm.elidedText(drawn, Qt::ElideRight, std::max(1, raster.w - pad_px));
+		if (!cut.isEmpty())
+			drawn = cut;
+	}
+	const QString line = space + drawn + space;
+	/* Centered in the texture (the native box is centered on the same text), first
+	 * baseline at the font ascent like the text source. */
+	const int text_x = std::max(0, (raster.w - dm.horizontalAdvance(line)) / 2);
+	const int baseline = dm.ascent();
+
 	QImage img(raster.w, raster.h, QImage::Format_ARGB32_Premultiplied);
 	img.fill(Qt::transparent);
 	{
 		QPainter p(&img);
-		p.setRenderHint(QPainter::Antialiasing);
 		p.setRenderHint(QPainter::TextAntialiasing);
-		/* texels <- label px <- reference px */
-		p.scale(qreal(raster.w) / size.cx, qreal(raster.h) / size.cy);
-		p.scale(k, k);
-		p.setFont(m_font);
+		p.setFont(dev_font);
 		p.setPen(Qt::white);
 		/* Opacity instead of a translucent pen so colour emoji fade too. */
 		p.setOpacity(kTextAlpha / 255.0);
-		/* Top-aligned line as the text source (first baseline at the ascent). */
-		p.drawText(QPointF(0.0, fm.ascent()), space + shown + space);
+		p.drawText(QPoint(text_x, baseline), line);
 	}
 
 	/* GS_BGRA with straight alpha, like the GDI+ ARGB bitmap of the text

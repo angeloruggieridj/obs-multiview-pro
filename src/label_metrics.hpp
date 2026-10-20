@@ -69,3 +69,38 @@ struct LabelRaster {
 /* Texture size for drawing a `size` label at `display_scale` (display px per
  * canvas px), so a texel is about one screen pixel. Between 2 and 4096. */
 LabelRaster label_raster(LabelSize size, const LabelScale &s, float display_scale);
+
+/* How the multiview canvas lands on the display: the viewport the renderer
+ * sets (origin and size in device pixels, the canvas fitted and centered like
+ * the native GetScaleAndCenterPos) and the resulting canvas -> device scale.
+ * Text is rasterized at device pixels and must be drawn 1:1, so its quads are
+ * placed with this map. No display known: the identity (1 px per canvas px). */
+struct DeviceMap {
+	int x;    /* viewport origin, device px */
+	int y;
+	float sx; /* device px per canvas px */
+	float sy;
+};
+
+DeviceMap device_map(uint32_t base_cx, uint32_t base_cy, int display_cx, int display_cy);
+
+/* A rectangle of whole device pixels. */
+struct DeviceRect {
+	int x;
+	int y;
+	int w;
+	int h;
+};
+
+/* The device pixels a canvas rect covers: each edge rounded to the nearest
+ * pixel boundary, which is the set of pixels whose centers lie inside. */
+DeviceRect device_rect(const RectF &canvas, const DeviceMap &m);
+
+/* Canvas rect whose edges fall exactly on `r`'s pixel boundaries. */
+RectF device_to_canvas(const DeviceRect &r, const DeviceMap &m);
+
+/* Font pixel size that gives a label with native face size `face_size`
+ * (label px, the font cell height) a cell of about face_size * label_to_device
+ * device px; `font_px_per_cell` is the font's pixel size over its cell height.
+ * Whole pixels, at least 1. */
+int label_font_px(int face_size, double font_px_per_cell, float label_to_device);

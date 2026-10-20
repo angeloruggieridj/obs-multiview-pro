@@ -295,7 +295,7 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		finish();
 		return;
 	}
-	const float dscale = display_scale(fw, fh);
+	const DeviceMap map = display_map(fw, fh);
 
 	for (const Tile &t : m_tiles) {
 		QString text;
@@ -327,12 +327,16 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		const RectF r = canvas_rect(t.rect);
 		const int face = label_face_size(ovi.base_height, pvw_pgm);
 		std::shared_ptr<const LabelImage> img =
-			m_labels.get(text, face, label_max_cx(r.w, scale), scale, dscale);
+			m_labels.get(text, face, label_max_cx(r.w, scale), scale, map.sx);
 		if (!img)
 			continue;
 		const LabelGeometry g = label_geometry(r, img->size, scale);
+		/* The text texture covers whole device pixels, its corner on a pixel. */
+		const DeviceRect dev = {int(std::lround(double(map.x) + double(g.text.x) * map.sx)),
+					int(std::lround(double(map.y) + double(g.text.y) * map.sy)), img->tex_w,
+					img->tex_h};
 		const size_t placed_index = placed.size();
-		placed.push_back({std::move(img), g.box.x, g.box.y, scale});
+		placed.push_back({std::move(img), g.box.x, g.box.y, scale, device_to_canvas(dev, map)});
 		if (t.kind == TileKind::Scene)
 			pending_hits.push_back({t.scene_slot, g.box, placed_index});
 	}
@@ -410,8 +414,9 @@ MultiviewRenderer::make_batch(const std::vector<PlacedLabel> &placed)
 		 * px, scaled by ppiScale, text shifted down by thickness label px. */
 		const float w = float(img.size.cx) * p.scale.x;
 		quad(batch->box_points, p.x, p.y, p.x + w, p.y + float(img.size.cy + 2 * int(thickness)) * p.scale.y);
-		const float ty = p.y + thickness * p.scale.y;
-		quad(batch->text_points, p.x, ty, p.x + w, ty + float(img.size.cy) * p.scale.y);
+		/* The text quad is the native text rect moved to whole device pixels and
+		 * sized like its texture (build_labels), so it is drawn 1:1. */
+		quad(batch->text_points, p.text.x, p.text.y, p.text.x + p.text.w, p.text.y + p.text.h);
 
 		const float u0 = float(spots[i].x) / float(atlas_cx);
 		const float v0 = float(spots[i].y) / float(atlas_cy);
@@ -428,16 +433,11 @@ MultiviewRenderer::make_batch(const std::vector<PlacedLabel> &placed)
 	return batch;
 }
 
-/* Display px per canvas px, in 1% steps so tiny size changes do not redraw
- * every label or status tile. */
-float MultiviewRenderer::display_scale(float fw, float fh) const
+/* Where the canvas lands on the display, exactly as render() sets the viewport.
+ * Text is rasterized and placed with it so every texel is one device pixel. */
+DeviceMap MultiviewRenderer::display_map(float fw, float fh) const
 {
-	float scale = 1.0f;
-	if (m_display_cx > 0 && m_display_cy > 0) {
-		const RectF fit = fit_rect(fw / fh, float(m_display_cx), float(m_display_cy));
-		scale = std::max(0.01f, std::round(fit.w / fw * 100.f) / 100.f);
-	}
-	return scale;
+	return device_map(uint32_t(fw), uint32_t(fh), m_display_cx, m_display_cy);
 }
 
 namespace {
@@ -475,7 +475,7 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 	if (m_canvas_cx > 0 && m_canvas_cy > 0) {
 		const float fw = float(m_canvas_cx);
 		const float fh = float(m_canvas_cy);
-		const float dscale = display_scale(fw, fh);
+		const DeviceMap map = display_map(fw, fh);
 		for (const Tile &t : m_tiles) {
 			if (!is_status_tile(t.kind))
 				continue;
@@ -486,8 +486,12 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 			const float ih = snap_px(t.rect.h * fh) - thicknessx2;
 			if (iw <= 0.0f || ih <= 0.0f)
 				continue;
-			const int w = std::min(2048, std::max(1, int(std::lround(iw * dscale))));
-			const int h = std::min(2048, std::max(1, int(std::lround(ih * dscale))));
+			/* The pixels the tile covers on the display; the image has exactly
+			 * that size and is drawn 1:1 (unless it hits the size cap). */
+			const DeviceRect dev = device_rect({ix, iy, iw, ih}, map);
+			const int w = std::min(2048, std::max(1, dev.w));
+			const int h = std::min(2048, std::max(1, dev.h));
+			const RectF rect = (w == dev.w && h == dev.h) ? device_to_canvas(dev, map) : RectF{ix, iy, iw, ih};
 
 			StatusCacheEntry entry;
 			for (const StatusCacheEntry &old : m_status_cache)
@@ -510,7 +514,7 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 			}
 			if (!entry.image)
 				continue;
-			placed.push_back({entry.image, {ix, iy, iw, ih}});
+			placed.push_back({entry.image, rect});
 			cache.push_back(std::move(entry));
 		}
 	}
@@ -558,11 +562,13 @@ MultiviewRenderer::make_status_batch(const std::vector<PlacedStatus> &placed)
 		vec3_set(&v[1], x1, y0, 0.0f);
 		vec3_set(&v[2], x0, y1, 0.0f);
 		vec3_set(&v[3], x1, y1, 0.0f);
-		/* Half a texel inside, so bilinear filtering never reads the padding. */
-		const float u0 = (float(ox) + 0.5f) / float(batch->atlas_cx);
-		const float v0 = (float(oy) + 0.5f) / float(batch->atlas_cy);
-		const float u1 = (float(ox + uint32_t(img.w)) - 0.5f) / float(batch->atlas_cx);
-		const float v1 = (float(oy + uint32_t(img.h)) - 0.5f) / float(batch->atlas_cy);
+		/* The quad covers exactly img.w x img.h device pixels (build_status), so
+		 * the whole cell maps 1:1: texel centers land on pixel centers and the
+		 * filter reads nothing but its own texel. */
+		const float u0 = float(ox) / float(batch->atlas_cx);
+		const float v0 = float(oy) / float(batch->atlas_cy);
+		const float u1 = float(ox + uint32_t(img.w)) / float(batch->atlas_cx);
+		const float v1 = float(oy + uint32_t(img.h)) / float(batch->atlas_cy);
 		vec2 uv[4];
 		vec2_set(&uv[0], u0, v0);
 		vec2_set(&uv[1], u1, v0);
@@ -736,11 +742,18 @@ void MultiviewRenderer::build_meter_scale(RenderSnapshot &snap)
 		if (inner.w <= 0.f || inner.h <= 0.f)
 			break;
 		const MeterGeometry g = meter_geometry(inner, true);
-		const float dscale = display_scale(fw, fh);
-		const int w = std::min(2048, std::max(1, int(std::lround(g.column.w * dscale))));
-		const int h = std::min(2048, std::max(1, int(std::lround(g.column.h * dscale))));
-		const std::vector<int> key = {w, h, int(std::lround(g.column.w * 16.f)),
-					      int(std::lround(g.column.h * 16.f)), int(std::lround(g.bar[0].h * 16.f))};
+		const DeviceMap map = display_map(fw, fh);
+		const DeviceRect dev = device_rect(g.column, map);
+		const int w = std::min(2048, std::max(1, dev.w));
+		const int h = std::min(2048, std::max(1, dev.h));
+		const RectF rect = (w == dev.w && h == dev.h) ? device_to_canvas(dev, map) : g.column;
+		const std::vector<int> key = {w,
+					      h,
+					      dev.x,
+					      dev.y,
+					      int(std::lround(g.column.w * 16.f)),
+					      int(std::lround(g.column.h * 16.f)),
+					      int(std::lround(g.bar[0].h * 16.f))};
 		if (!m_scale_batch || key != m_scale_key) {
 			auto image = render_meter_scale(g, w, h);
 			if (!image) {
@@ -749,7 +762,7 @@ void MultiviewRenderer::build_meter_scale(RenderSnapshot &snap)
 				auto batch = std::make_shared<MeterScaleBatch>();
 				batch->id = m_next_scale_id++;
 				batch->image = std::move(image);
-				batch->rect = g.column;
+				batch->rect = rect;
 				m_scale_batch = std::move(batch);
 			}
 			m_scale_key = key;

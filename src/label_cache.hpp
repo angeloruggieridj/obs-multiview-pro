@@ -54,6 +54,6 @@ private:
 	std::shared_ptr<const LabelImage> render(const QString &text, int face_size, int max_cx,
 						 const LabelScale &scale, float display_scale);
 
-	QFont m_font; /* reference size; scaled when drawing */
+	QFont m_font; /* reference size: measuring only, glyphs use a device-size copy */
 	std::map<Key, Entry> m_entries;
 };

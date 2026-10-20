@@ -3,6 +3,8 @@
 
 #include "label_metrics.hpp"
 
+#include <cmath>
+
 /* Expected numbers worked out by hand from the native formulae (OBS 32.1
  * Multiview.cpp / obs-text.cpp) for a 1920x1080 canvas. */
 
@@ -160,4 +162,89 @@ TEST_CASE("layout_label_raster_follows_display_scale")
 	CHECK(r.h == 2);
 	r = label_raster({20000, 38}, s8, 10.f);
 	CHECK(r.w == 4096);
+}
+
+TEST_CASE("layout_device_map_matches_viewport_fit")
+{
+	/* 16:9 window for a 16:9 canvas: no bars, scale 1600 / 1920 */
+	DeviceMap m = device_map(1920, 1080, 1600, 900);
+	CHECK(m.x == 0);
+	CHECK(m.y == 0);
+	CHECK(m.sx == doctest::Approx(1600.0 / 1920.0));
+	CHECK(m.sy == doctest::Approx(900.0 / 1080.0));
+	/* taller window: bars above and below */
+	m = device_map(1920, 1080, 1000, 900);
+	CHECK(m.x == 0);
+	CHECK(m.y == (900 - 562) / 2); /* int(1000 / (16/9)) = 562 */
+	CHECK(m.sx == doctest::Approx(1000.0 / 1920.0).epsilon(0.001));
+	/* wider window: bars left and right */
+	m = device_map(1920, 1080, 2000, 900);
+	CHECK(m.y == 0);
+	CHECK(m.x == 2000 / 2 - 1600 / 2);
+	/* 4K display, 100 % fit */
+	m = device_map(1920, 1080, 3840, 2160);
+	CHECK(m.sx == doctest::Approx(2.0));
+	/* nothing known: identity */
+	m = device_map(1920, 1080, 0, 0);
+	CHECK(m.x == 0);
+	CHECK(m.y == 0);
+	CHECK(m.sx == 1.0f);
+	CHECK(m.sy == 1.0f);
+	m = device_map(0, 0, 100, 100);
+	CHECK(m.sx == 1.0f);
+}
+
+TEST_CASE("layout_device_rect_rounds_edges_to_pixels")
+{
+	const DeviceMap m = {0, 0, 0.8333333f, 0.8333333f};
+	/* 100.4 -> 83.67 -> 84; right edge 150.4 + ... : edges rounded, not size */
+	DeviceRect r = device_rect({120.f, 60.f, 240.f, 36.f}, m);
+	CHECK(r.x == 100);
+	CHECK(r.y == 50);
+	CHECK(r.w == 200);
+	CHECK(r.h == 30);
+	r = device_rect({121.f, 61.f, 241.f, 37.f}, m); /* x 100.83 -> 101, right 301.67 -> 302 */
+	CHECK(r.x == 101);
+	CHECK(r.w == 201);
+	CHECK(r.y == 51);
+	CHECK(r.h == 31);
+	/* the viewport origin counts */
+	r = device_rect({0.f, 0.f, 96.f, 96.f}, {7, 3, 0.5f, 0.5f});
+	CHECK(r.x == 7);
+	CHECK(r.y == 3);
+	CHECK(r.w == 48);
+	CHECK(r.h == 48);
+}
+
+TEST_CASE("layout_device_to_canvas_is_pixel_aligned")
+{
+	const DeviceMap maps[] = {{0, 0, 0.8333333f, 0.8333333f}, {12, 5, 0.5208333f, 0.5208333f}, {0, 0, 2.f, 2.f}};
+	for (const DeviceMap &m : maps) {
+		const DeviceRect d = {37, 21, 55, 11};
+		const RectF c = device_to_canvas(d, m);
+		/* back to device: exactly the same whole pixels */
+		const DeviceRect back = device_rect(c, m);
+		CHECK(back.x == d.x);
+		CHECK(back.y == d.y);
+		CHECK(back.w == d.w);
+		CHECK(back.h == d.h);
+		/* and the edges land on integers within float noise */
+		const double left = double(m.x) + double(c.x) * double(m.sx);
+		CHECK(std::fabs(left - std::round(left)) < 1e-3);
+		const double right = double(m.x) + double(c.x + c.w) * double(m.sx);
+		CHECK(std::fabs(right - double(d.x + d.w)) < 1e-3);
+	}
+}
+
+TEST_CASE("layout_label_font_px_is_whole_pixels")
+{
+	/* scenes at 1600x900: face 36 label px, 0.8333 * 0.4896 label->device,
+	 * font px / cell = 0.9 */
+	CHECK(label_font_px(36, 0.9, 0.8333f * 0.4896f) == 13);
+	CHECK(label_font_px(55, 0.9, 0.4896f) == 24);
+	/* never below one pixel, whatever the input */
+	CHECK(label_font_px(36, 0.9, 0.f) == 1);
+	CHECK(label_font_px(0, 0.9, 1.f) == 1);
+	CHECK(label_font_px(36, 0.0, 1.f) == 1);
+	CHECK(label_font_px(36, 0.9, std::nanf("")) == 1);
 }

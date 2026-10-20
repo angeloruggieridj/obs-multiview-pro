@@ -44,7 +44,7 @@ std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g
 		);
 		f.setStyleHint(QFont::SansSerif);
 		f.setPixelSize(px);
-		f.setHintingPreference(QFont::PreferNoHinting);
+		f.setHintingPreference(QFont::PreferFullHinting);
 		p.setFont(f);
 		p.setPen(QColor(0xE6, 0xE6, 0xE6));
 		const QFontMetricsF fm(f);

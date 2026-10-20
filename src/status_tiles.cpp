@@ -37,7 +37,7 @@ QFont make_font(bool bold)
 #endif
 	f.setStyleHint(QFont::SansSerif);
 	f.setBold(bold);
-	f.setHintingPreference(QFont::PreferNoHinting);
+	f.setHintingPreference(QFont::PreferFullHinting);
 	return f;
 }
 
