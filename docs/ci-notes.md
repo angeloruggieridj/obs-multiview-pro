@@ -2,7 +2,7 @@
 
 ## Cosa fa il workflow
 
-`.github/workflows/build.yml` parte a ogni `push`, `pull_request` e a mano (`workflow_dispatch`). Tre job indipendenti (un errore su una piattaforma non nasconde le altre, non c'e' `needs`):
+`.github/workflows/build.yml` parte a ogni `push` su un branch, `pull_request`, a mano (`workflow_dispatch`) e quando lo richiama `release.yml` (`workflow_call`). Tre job indipendenti (un errore su una piattaforma non nasconde le altre, non c'e' `needs`):
 
 | Job | Runner | Preset | Cartella di build | Artifact |
 | --- | --- | --- | --- | --- |
@@ -14,8 +14,39 @@ Ogni job: checkout, configure col preset CI, build `RelWithDebInfo`, `ctest --ou
 
 - Windows e macOS: la configure scarica OBS 32.1.2, obs-deps e Qt6 (2025-08-23) secondo `buildspec.json` (hash verificati) e compila libobs/frontend-api da sorgente, come obs-plugintemplate. Il preset `windows-x64` nomina il generatore "Visual Studio 18 2026" (quello locale); il runner ha VS 2022, quindi il workflow passa `-G "Visual Studio 17 2022" -A x64`.
 - Ubuntu: nessuna dipendenza scaricata da CMake; libobs/frontend-api vengono dal PPA `ppa:obsproject/obs-studio`, Qt6 da Ubuntu (stessi pacchetti di obs-plugintemplate).
-- Permessi: solo `contents: read`. Nessun secret, nessuna firma, notarizzazione, installer o release (fuori dalla fase 1). Concurrency: un run nuovo sullo stesso ref annulla quello in corso. Le action usate sono `actions/checkout@v4` e `actions/upload-artifact@v4`.
+- Permessi: solo `contents: read`. Nessun secret, nessuna firma, notarizzazione o installer. Le release le fa `release.yml` (sotto). Concurrency: un run nuovo sullo stesso ref annulla quello in corso. Le action usate sono `actions/checkout@v4` e `actions/upload-artifact@v4`.
 - Il segnaposto di `qlalr.exe` (vedi `dev-environment-notes.md`) serve solo in locale: sui runner il vero `qlalr.exe` e' ok e non va replicato.
+
+## Release (`.github/workflows/release.yml`)
+
+Parte solo al push di un tag `v*.*.*` (es. `v0.2.0`, `v0.2.0-rc.1`). `build.yml` ora parte per i push sui branch (non sui tag), per le pull request, a mano e come workflow riusabile (`workflow_call`): il workflow di release lo richiama, quindi build, test e artifact sono identici e un tag compila una volta sola.
+
+| Job | Cosa fa | Permessi |
+| --- | --- | --- |
+| `check` | il tag senza `v` deve essere uguale a `version` di `buildspec.json` (letto con `jq`), e `CHANGELOG.md` deve avere una sezione `## <versione>` non vuota (`.github/scripts/changelog-section.sh`); altrimenti fallisce subito con un messaggio chiaro | `contents: read` |
+| `build` | `uses: ./.github/workflows/build.yml` (i tre job Windows / macOS / Ubuntu con ctest e upload) | `contents: read` |
+| `release` | scarica gli artifact, crea gli zip, `SHA256SUMS.txt`, estrae le note dalla sezione del CHANGELOG e chiama `gh release create "$GITHUB_REF_NAME" --verify-tag --title ... --notes-file ...` (`--prerelease` se la versione contiene `-`) | `contents: write`, solo qui |
+
+Asset (layout pensato per estrarre lo zip direttamente nella cartella dei plugin):
+
+- `obs-multiview-pro-<versione>-windows-x64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.dll` + `.pdb` (in `C:\ProgramData\obs-studio\plugins\`).
+- `obs-multiview-pro-<versione>-macos-universal.zip`: il bundle `obs-multiview-pro.plugin` zippato con `ditto` (artifact di `build.yml`, rinominato).
+- `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.so`.
+- `SHA256SUMS.txt`: `sha256sum` dei tre zip.
+
+Nessuna action di terze parti: `actions/checkout@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4` e `gh` (preinstallato sui runner, token `github.token`).
+
+Per pubblicare: rinominare `## Unreleased` in `## <versione>` nel CHANGELOG, portare `version` di `buildspec.json` alla stessa versione, commit, poi `git tag v<versione>` e push del tag.
+
+Verifiche fatte senza eseguirlo: struttura YAML con un controllo in Python (nessun PyYAML: parser del sottoinsieme usato; job, `needs`, `uses` versionati, `workflow_call` presente), estrazione delle note provata in locale su un CHANGELOG di prova (sezione presente, `v`/`[...]`/testo dopo la versione, sezione mancante o vuota -> errore), passi di packaging eseguiti in locale con artifact finti e `gh` simulato (nomi e contenuto degli zip, checksum, flag `--prerelease`). Percorsi controllati contro `CMakePresets.json` e gli upload di `build.yml` (`build_x64/rundir/RelWithDebInfo`, `build_macos/rundir/RelWithDebInfo/*.plugin`, `build_x86_64/rundir/RelWithDebInfo/*.so`).
+
+Da controllare al primo tag:
+
+1. Il job `check` legge la versione (jq) e trova la sezione del CHANGELOG.
+2. Il workflow riusabile parte con i permessi `contents: read` e i tre job passano come in `build.yml`.
+3. Gli artifact scaricati stanno in `artifacts/<nome-artifact>/` con i file attesi (un `.dll` + `.pdb`, un `.plugin.zip`, un `.so`); il job elenca i file e il contenuto degli zip nel log.
+4. `gh release create` crea la release con i 4 asset; per un tag con `-` la release e' marcata come pre-release.
+5. Tag di pre-release: `buildspec.json` dovrebbe contenere la stessa stringa (es. `0.2.0-rc.1`), ma `cmake/common/bootstrap.cmake` usa la versione in `project(VERSION ...)`, che accetta solo numeri: con il template attuale le pre-release non si possono ancora costruire (serve separare la versione numerica da quella mostrata).
 
 ## Stato: mai eseguito
 

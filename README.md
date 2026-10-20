@@ -43,6 +43,7 @@ The native OBS multiview is fixed: 8 or 24 scenes, no audio meters, no clock, no
 - **Editing in place.** Click to switch, drag tiles to swap, right-click to assign or remove a scene, click a tile name to pick another scene.
 - **Settings.** Choose the border colour (the frame under and around the tiles), the label opacity and the meter opacity. Changes show live in every window.
 - **Remembers everything.** Preset, options and tile assignments are saved per window and per scene collection.
+- **Update check.** Tells you when a new version is out and shows its change log in the settings (automatic once a day, or on demand). It never downloads or installs anything: the download page opens in your browser.
 - **Light.** The draw path does no allocation and the audio callbacks only write atomics. Meters off means no audio work at all.
 
 ### Presets
@@ -56,15 +57,15 @@ The native OBS multiview is fixed: 8 or 24 scenes, no audio meters, no clock, no
 
 ### Install
 
-No release yet: the plugin is in alpha. Build it from source (below), or download the build artifacts of the latest successful run in the [Actions](https://github.com/angeloruggieridj/obs-multiview-pro/actions) tab.
+Download the zip for your system from the [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) page and unzip it here:
 
-| OS | Copy to |
-| --- | --- |
-| Windows | `C:\ProgramData\obs-studio\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
-| macOS | `~/Library/Application Support/obs-studio/plugins/obs-multiview-pro.plugin` |
-| Linux | `~/.config/obs-studio/plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
+| OS | Download | Unzip into | Result |
+| --- | --- | --- | --- |
+| Windows | `obs-multiview-pro-<version>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
+| macOS | `obs-multiview-pro-<version>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
+| Linux | `obs-multiview-pro-<version>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
 
-Close OBS before copying. Needs OBS Studio 32.1 or newer.
+Close OBS before copying. Needs OBS Studio 32.1 or newer. `SHA256SUMS.txt` on the release page lists the checksum of every zip. The binaries are not signed: macOS may ask you to allow the plugin in *System Settings → Privacy & Security*. To update, close OBS and unzip the new version over the old one.
 
 ### Getting started
 
@@ -86,6 +87,10 @@ Scenes with *Show in Multiview* off are skipped, like the native one.
 
 **Settings.** Open **Tools → Multiview Settings...** or right-click a window → **Settings...**. *Border colour* is the frame under and around the tiles (default grey; the red program and green preview outlines do not change). *Label opacity* is the opacity of scene names, Preview and Program, 0–100 % (default 50 %, the native look; the label background follows it; 0 hides the labels and also removes the click-on-name scene menu). *Meter opacity* is the opacity of the audio meters, 0–100 % (default 100 %); every element fades on its own, so the contrast between lit and unlit parts drops at low values. The settings apply to all windows and are saved.
 
+**Updates.** The *Updates* tab shows the installed version and the result of the last check: *Check for updates now* asks GitHub at once; *Check for updates automatically* (on by default) does it once a day, 60 seconds after OBS has finished loading at the earliest and never while streaming or recording. When a newer version exists, the tab shows the change log of every newer release, *Open download page* opens its release page in your browser and *Skip this version* stops the reminder until a newer one comes out. An automatic check never opens a window: it writes one line in the OBS log, and the window menu gets an *Update available* entry (the Tools menu entry becomes *Multiview Settings... (update available)*). *Include pre-releases* also reports beta and release-candidate versions.
+
+**Privacy.** A check is one HTTPS GET to `api.github.com` (the public list of this project's releases). It sends nothing but the request itself and `User-Agent: obs-multiview-pro/<version>`: no cookies, no account, no system details. To turn the automatic check off: *Settings → Updates*, clear *Check for updates automatically*, then OK.
+
 ### Status and limits
 
 Alpha. Tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds run on CI but have not been tried yet.
@@ -95,6 +100,7 @@ Alpha. Tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds run o
 - OBS has no cache indicator like hardware switchers: the connection state comes from the output congestion.
 - If the window opens while streaming or recording, durations are derived from the output frame counter.
 - No NDI state tile.
+- The OBS 32 build for Windows ships Qt without its TLS plugin, so on Windows the update check currently ends with *Secure connections are not available in this OBS installation* (nothing is sent). Check the Releases page by hand meanwhile.
 
 ### Build from source
 
@@ -132,6 +138,7 @@ Il multiview nativo di OBS è fisso: 8 o 24 scene, nessun meter audio, nessun or
 - **Modifica sul posto.** Clic per cambiare scena, trascina per scambiare, tasto destro per assegnare o togliere una scena, clic sul nome per sceglierne un'altra.
 - **Impostazioni.** Scegli il colore del bordo (la cornice sotto e attorno ai riquadri), l'opacità delle etichette e quella dei meter. Le modifiche si vedono subito in tutte le finestre.
 - **Ricorda tutto.** Preset, opzioni e assegnazioni sono salvati per finestra e per collezione di scene.
+- **Verifica aggiornamenti.** Ti avvisa quando esce una nuova versione e ne mostra il change log nelle impostazioni (automatica una volta al giorno, oppure a richiesta). Non scarica e non installa mai nulla: la pagina di download si apre nel browser.
 - **Leggero.** Il disegno non alloca memoria e i callback audio scrivono solo valori atomici. Con i meter spenti non c'è alcun lavoro audio.
 
 ### Preset
@@ -145,15 +152,15 @@ Il multiview nativo di OBS è fisso: 8 o 24 scene, nessun meter audio, nessun or
 
 ### Installazione
 
-Nessuna release per ora: il plugin è in alpha. Compilalo dai sorgenti (sotto) oppure scarica i file prodotti dall'ultima esecuzione riuscita nella scheda [Actions](https://github.com/angeloruggieridj/obs-multiview-pro/actions).
+Scarica lo zip del tuo sistema dalla pagina [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) ed estrailo qui:
 
-| Sistema | Copia in |
-| --- | --- |
-| Windows | `C:\ProgramData\obs-studio\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
-| macOS | `~/Library/Application Support/obs-studio/plugins/obs-multiview-pro.plugin` |
-| Linux | `~/.config/obs-studio/plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
+| Sistema | Download | Estrai in | Risultato |
+| --- | --- | --- | --- |
+| Windows | `obs-multiview-pro-<versione>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
+| macOS | `obs-multiview-pro-<versione>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
+| Linux | `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
 
-Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo.
+Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo. `SHA256SUMS.txt` nella pagina della release elenca il checksum di ogni zip. I binari non sono firmati: macOS può chiedere di consentire il plugin in *Impostazioni di Sistema → Privacy e sicurezza*. Per aggiornare chiudi OBS ed estrai la nuova versione sopra la vecchia.
 
 ### Primi passi
 
@@ -175,6 +182,10 @@ Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo
 
 **Impostazioni.** Apri **Strumenti → Multiview Settings...** oppure tasto destro sulla finestra → **Settings...**. *Border colour* è la cornice sotto e attorno ai riquadri (grigio di default; i contorni rosso del programma e verde dell'anteprima non cambiano). *Label opacity* è l'opacità di nomi delle scene, Preview e Program, 0–100 % (default 50 %, l'aspetto nativo; lo sfondo dell'etichetta la segue; 0 nasconde le etichette e toglie anche il menu delle scene al clic sul nome). *Meter opacity* è l'opacità dei meter audio, 0–100 % (default 100 %); ogni elemento sfuma per conto suo, quindi con valori bassi il contrasto tra parti accese e spente diminuisce. Le impostazioni valgono per tutte le finestre e vengono salvate.
 
+**Aggiornamenti.** La scheda *Updates* mostra la versione installata e l'esito dell'ultima verifica: *Check for updates now* interroga subito GitHub; *Check for updates automatically* (attiva di default) lo fa una volta al giorno, non prima di 60 secondi dalla fine del caricamento di OBS e mai durante una diretta o una registrazione. Se esiste una versione più recente, la scheda mostra il change log di tutte le release più nuove, *Open download page* apre la pagina della release nel browser e *Skip this version* sospende l'avviso finché non esce una versione ancora più nuova. Una verifica automatica non apre mai finestre: scrive una riga nel log di OBS e il menu della finestra mostra la voce *Update available* (la voce del menu Strumenti diventa *Multiview Settings... (update available)*). *Include pre-releases* segnala anche le versioni beta e release candidate.
+
+**Privacy.** Una verifica è una sola richiesta HTTPS GET ad `api.github.com` (l'elenco pubblico delle release del progetto). Invia soltanto la richiesta e `User-Agent: obs-multiview-pro/<versione>`: nessun cookie, nessun account, nessun dato del sistema. Per disattivare la verifica automatica: *Settings → Updates*, togli la spunta a *Check for updates automatically*, poi OK.
+
 ### Stato e limiti
 
 Alpha. Provato solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux girano in CI ma non sono ancora state provate.
@@ -184,6 +195,7 @@ Alpha. Provato solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux g
 - OBS non ha un indicatore di cache come gli switcher hardware: lo stato della connessione deriva dalla congestione dell'uscita.
 - Se la finestra si apre durante una diretta o una registrazione, le durate si ricavano dal contatore di frame dell'uscita.
 - Nessun riquadro con lo stato NDI.
+- La build di OBS 32 per Windows include Qt senza il suo plugin TLS, quindi su Windows la verifica degli aggiornamenti per ora termina con *Secure connections are not available in this OBS installation* (non viene inviato nulla). Nel frattempo controlla a mano la pagina Releases.
 
 ### Compilare dai sorgenti
 
