@@ -42,7 +42,11 @@
  * the tiles, label and meter opacity), shared by every window. Windows read it
  * at construction and listen to appearance_changed() to follow changes live;
  * the signal is emitted on the UI thread only, by set_appearance() (saved) and
- * preview_appearance() (not saved, for the settings dialog). */
+ * preview_appearance() (not saved, for the settings dialog).
+ *
+ * Updates: another global section (automatic check on/off, pre-releases,
+ * time of the last attempt, last version seen, skipped version), used by
+ * UpdateManager and the settings dialog. */
 class SettingsStore : public QObject {
 	Q_OBJECT
 
@@ -68,6 +72,11 @@ public:
 	 * windows. Calling it with appearance() takes the preview back. */
 	void preview_appearance(const Appearance &a);
 
+	/* The global update check settings (defaults when nothing is saved). */
+	UpdateSettings updates();
+	/* Stores `u` and schedules the write. No-op when nothing changes. */
+	void set_updates(const UpdateSettings &u);
+
 	/* Writes now if something changed since the last write. */
 	void flush();
 
@@ -91,6 +100,8 @@ private:
 	/* set_appearance was called in this session: only then it overrides the
 	 * file's when a blocked file can be read later. */
 	bool m_appearance_touched = false;
+	/* Same for the update settings. */
+	bool m_updates_touched = false;
 	bool m_dirty = false;
 	bool m_write_warned = false;
 	/* The file exists but could not be read: never write (it would replace

@@ -3,6 +3,7 @@
 
 #include "settings.hpp"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -580,4 +581,147 @@ TEST_CASE("state_settings_appearance_number_rounding")
 	CHECK(label("1E400") == 100);
 	CHECK(label("1e-400") == 0);
 	CHECK(label("100") == 100);
+}
+
+/* ---- Update check settings ------------------------------------------------------ */
+
+static UpdateSettings custom_updates()
+{
+	UpdateSettings u;
+	u.auto_check = false;
+	u.include_prereleases = true;
+	u.last_check_unix = 1800000123;
+	u.last_seen_version = "v1.2.0-rc.1";
+	u.skipped_version = "v1.1.0";
+	return u;
+}
+
+static UpdateSettings load_updates(const std::string &body)
+{
+	ParseStatus st = ParseStatus::Corrupt;
+	INFO("body: " << body);
+	const SettingsFile f = from_json("{\"version\":1,\"global\":{\"updates\":{" + body + "}}}", &st);
+	CHECK(st == ParseStatus::Ok);
+	return f.updates;
+}
+
+TEST_CASE("state_settings_updates_defaults")
+{
+	const UpdateSettings u;
+	CHECK(u.auto_check); /* automatic by default */
+	CHECK_FALSE(u.include_prereleases);
+	CHECK(u.last_check_unix == 0);
+	CHECK(u.last_seen_version.empty());
+	CHECK(u.skipped_version.empty());
+}
+
+TEST_CASE("state_settings_updates_roundtrip")
+{
+	SettingsFile f;
+	f.updates = custom_updates();
+	f.appearance = custom_appearance();
+	f.instances[2] = sample();
+	ParseStatus st = ParseStatus::Corrupt;
+	const std::string json = to_json(f);
+	CHECK(json.find("\"updates\": {") != std::string::npos);
+	CHECK(json.find("\"last_check_unix\": 1800000123") != std::string::npos);
+	const SettingsFile back = from_json(json, &st);
+	CHECK(st == ParseStatus::Ok);
+	CHECK(back.updates == custom_updates());
+	CHECK(back == f);
+	CHECK(to_json(back) == json);
+
+	/* Only a change of the section makes the files differ. */
+	SettingsFile g = f;
+	g.updates.last_check_unix += 1;
+	CHECK(f != g);
+}
+
+TEST_CASE("state_settings_updates_missing_section_gives_defaults")
+{
+	/* Files written before the section existed (appearance only). */
+	const SettingsFile a = from_json(
+		"{\"version\":1,\"global\":{\"appearance\":{\"label_opacity\":20}},\"instances\":{\"0\":{\"meters\":false}}}");
+	CHECK(a.updates == UpdateSettings());
+	CHECK(a.appearance.label_opacity == 20);
+	CHECK(a.instances.at(0).meters == false);
+	CHECK(from_json("{\"version\":1}").updates == UpdateSettings());
+	CHECK(from_json("{\"version\":1,\"global\":{\"updates\":{}}}").updates == UpdateSettings());
+	CHECK(from_json("{\"version\":1,\"global\":{\"updates\":[true]}}").updates == UpdateSettings());
+	CHECK(from_json("{\"version\":1,\"global\":{\"updates\":null}}").updates == UpdateSettings());
+	CHECK(from_json("").updates == UpdateSettings());
+}
+
+TEST_CASE("state_settings_updates_hostile_values")
+{
+	/* Wrong types keep the defaults. */
+	UpdateSettings u = load_updates("\"auto_check\":\"no\",\"include_prereleases\":1,\"last_check_unix\":\"123\","
+					"\"last_seen_version\":12,\"skipped_version\":null");
+	CHECK(u == UpdateSettings());
+	u = load_updates("\"auto_check\":[false],\"include_prereleases\":{},\"last_check_unix\":true");
+	CHECK(u == UpdateSettings());
+
+	/* Numbers: negative -> 0, fractions truncated, huge values clamped. */
+	CHECK(load_updates("\"last_check_unix\":-5").last_check_unix == 0);
+	CHECK(load_updates("\"last_check_unix\":-1e999").last_check_unix == 0);
+	CHECK(load_updates("\"last_check_unix\":1800000000.9").last_check_unix == 1800000000);
+	CHECK(load_updates("\"last_check_unix\":1e999").last_check_unix == kMaxStoredUnixTime);
+	CHECK(load_updates("\"last_check_unix\":99999999999999999999999").last_check_unix == kMaxStoredUnixTime);
+	CHECK(load_updates("\"last_check_unix\":253402300800").last_check_unix == kMaxStoredUnixTime);
+	CHECK(load_updates("\"last_check_unix\":253402300799").last_check_unix == kMaxStoredUnixTime);
+	CHECK(load_updates("\"last_check_unix\":1.8e9").last_check_unix == 1800000000);
+
+	/* Version strings: printable ASCII, no spaces, bounded; else "". */
+	CHECK(load_updates("\"skipped_version\":\"v1.2.3-rc.1+b\"").skipped_version == "v1.2.3-rc.1+b");
+	CHECK(load_updates("\"skipped_version\":\"v1 2\"").skipped_version.empty());
+	CHECK(load_updates("\"skipped_version\":\"v1\\u00002\"").skipped_version.empty());
+	CHECK(load_updates("\"skipped_version\":\"v1\\n\"").skipped_version.empty());
+	CHECK(load_updates("\"skipped_version\":\"v\\u00e9\"").skipped_version.empty());
+	CHECK(load_updates("\"last_seen_version\":\"" + std::string(65, '1') + "\"").last_seen_version.empty());
+	CHECK(load_updates("\"last_seen_version\":\"" + std::string(64, '1') + "\"").last_seen_version ==
+	      std::string(64, '1'));
+	CHECK(load_updates("\"last_seen_version\":\"" + std::string(5000, 'x') + "\"").last_seen_version.empty());
+
+	/* Unknown keys tolerated, duplicates: the last one wins. */
+	u = load_updates("\"channel\":\"nightly\",\"future\":{\"a\":[1,2]},\"auto_check\":true,\"auto_check\":false");
+	CHECK_FALSE(u.auto_check);
+
+	/* Hostile values never touch the other sections. */
+	const SettingsFile f = from_json("{\"version\":1,\"global\":{\"appearance\":{\"meter_opacity\":30},"
+					 "\"updates\":{\"last_check_unix\":\"x\",\"auto_check\":7}},"
+					 "\"instances\":{\"1\":{\"preset\":\"scenes4\"}}}");
+	CHECK(f.appearance.meter_opacity == 30);
+	CHECK(f.instances.at(1).preset == Preset::Scenes4);
+	CHECK(f.updates == UpdateSettings());
+}
+
+TEST_CASE("state_settings_updates_writer_sanitizes")
+{
+	/* The writer never produces something the reader would reject. */
+	SettingsFile f;
+	f.updates.last_check_unix = -42;
+	f.updates.last_seen_version = "v1\n2";
+	f.updates.skipped_version = std::string(100, 'v');
+	ParseStatus st = ParseStatus::Corrupt;
+	const SettingsFile back = from_json(to_json(f), &st);
+	CHECK(st == ParseStatus::Ok);
+	CHECK(back.updates.last_check_unix == 0);
+	CHECK(back.updates.last_seen_version.empty());
+	CHECK(back.updates.skipped_version.empty());
+	f.updates.last_check_unix = INT64_MAX;
+	CHECK(from_json(to_json(f)).updates.last_check_unix == kMaxStoredUnixTime);
+}
+
+TEST_CASE("state_settings_merge_updates_touched_vs_untouched")
+{
+	SettingsFile base;
+	base.updates = custom_updates();
+	base.appearance = custom_appearance();
+	SettingsFile over;
+	over.updates.last_check_unix = 5;
+	merge_settings(base, over, false, false);
+	CHECK(base.updates == custom_updates());
+	merge_settings(base, over, false, true);
+	CHECK(base.updates == over.updates);
+	CHECK(base.appearance == custom_appearance()); /* appearance not touched */
 }

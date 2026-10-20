@@ -571,6 +571,59 @@ Appearance appearance_from_value(const JValue &obj)
 	return a;
 }
 
+/* Version strings as stored: printable ASCII without spaces, bounded. */
+bool storable_version(const std::string &s)
+{
+	if (s.size() > kMaxStoredVersionText)
+		return false;
+	for (char ch : s) {
+		const unsigned char c = static_cast<unsigned char>(ch);
+		if (c <= 0x20 || c >= 0x7F)
+			return false;
+	}
+	return true;
+}
+
+int64_t clamp_unix_time(int64_t t)
+{
+	if (t < 0)
+		return 0;
+	return t > kMaxStoredUnixTime ? kMaxStoredUnixTime : t;
+}
+
+/* A JSON number as Unix seconds: truncated, clamped to [0, kMaxStoredUnixTime]. */
+int64_t unix_time_from_value(const JValue *v, int64_t fallback)
+{
+	if (!v || v->type != JValue::Number)
+		return fallback;
+	const double d = number_value(v->s);
+	if (!(d > 0.0))
+		return 0; /* also NaN */
+	if (d >= static_cast<double>(kMaxStoredUnixTime))
+		return kMaxStoredUnixTime;
+	return static_cast<int64_t>(d);
+}
+
+std::string version_from_value(const JValue *v)
+{
+	if (!v || v->type != JValue::String || !storable_version(v->s))
+		return std::string();
+	return v->s;
+}
+
+UpdateSettings updates_from_value(const JValue &obj)
+{
+	UpdateSettings u;
+	if (const JValue *v = obj.find("auto_check"); v && v->type == JValue::Bool)
+		u.auto_check = v->b;
+	if (const JValue *v = obj.find("include_prereleases"); v && v->type == JValue::Bool)
+		u.include_prereleases = v->b;
+	u.last_check_unix = unix_time_from_value(obj.find("last_check_unix"), u.last_check_unix);
+	u.last_seen_version = version_from_value(obj.find("last_seen_version"));
+	u.skipped_version = version_from_value(obj.find("skipped_version"));
+	return u;
+}
+
 } // namespace
 
 const char *preset_name(Preset preset)
@@ -596,7 +649,16 @@ std::string to_json(const SettingsFile &file)
 	out += "      \"border_color\": \"" + format_color(app.border_rgb) + "\",\n";
 	out += "      \"label_opacity\": " + std::to_string(app.label_opacity) + ",\n";
 	out += "      \"meter_opacity\": " + std::to_string(app.meter_opacity) + "\n";
-	out += "    }\n  },\n  \"instances\": {";
+	out += "    },\n    \"updates\": {\n";
+	const UpdateSettings &up = file.updates;
+	out += std::string("      \"auto_check\": ") + (up.auto_check ? "true" : "false") + ",\n";
+	out += std::string("      \"include_prereleases\": ") + (up.include_prereleases ? "true" : "false") + ",\n";
+	out += "      \"last_check_unix\": " + std::to_string(clamp_unix_time(up.last_check_unix)) + ",\n";
+	out += "      \"last_seen_version\": ";
+	write_string(out, storable_version(up.last_seen_version) ? up.last_seen_version : std::string());
+	out += ",\n      \"skipped_version\": ";
+	write_string(out, storable_version(up.skipped_version) ? up.skipped_version : std::string());
+	out += "\n    }\n  },\n  \"instances\": {";
 	bool first_instance = true;
 	for (const auto &inst : file.instances) {
 		if (inst.first < 0 || inst.first >= kMaxInstances)
@@ -662,6 +724,8 @@ SettingsFile from_json(const std::string &json, ParseStatus *status)
 	if (const JValue *global = root.find("global"); global && global->type == JValue::Object) {
 		if (const JValue *app = global->find("appearance"); app && app->type == JValue::Object)
 			file.appearance = appearance_from_value(*app);
+		if (const JValue *up = global->find("updates"); up && up->type == JValue::Object)
+			file.updates = updates_from_value(*up);
 	}
 	if (const JValue *insts = root.find("instances"); insts && insts->type == JValue::Object) {
 		for (size_t i = 0; i < insts->keys.size(); ++i) {
@@ -715,10 +779,13 @@ void note_collection_saved(WindowSettings &w, const std::string &name, size_t ma
 	w.collection_order = std::move(order);
 }
 
-void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched)
+void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched,
+		    bool overlay_updates_touched)
 {
 	if (overlay_appearance_touched)
 		base.appearance = overlay.appearance;
+	if (overlay_updates_touched)
+		base.updates = overlay.updates;
 	for (const auto &inst : overlay.instances) {
 		WindowSettings &dst = base.instances[inst.first];
 		if (inst.second.options_touched) {

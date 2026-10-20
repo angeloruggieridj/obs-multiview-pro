@@ -6,7 +6,10 @@
 // File model (version 1):
 //   { "version": 1,
 //     "global": { "appearance": { "border_color": "#999999", "label_opacity": 50,
-//                                 "meter_opacity": 100 } },
+//                                 "meter_opacity": 100 },
+//                 "updates": { "auto_check": true, "include_prereleases": false,
+//                              "last_check_unix": 0, "last_seen_version": "",
+//                              "skipped_version": "" } },
 //     "instances": { "0": { "preset": "scenes8", "safe_areas": true,
 //                           "meters": true,
 //                           "collections": { "<collection>": ["scene"|null, ...] } } } }
@@ -22,6 +25,7 @@
 #include "layout_model.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
@@ -30,6 +34,8 @@ constexpr size_t kMaxSettingsBytes = 1024 * 1024;
 constexpr int kMaxInstances = 100;      /* instance indices 0..99 */
 constexpr size_t kMaxSlotsStored = 64;  /* per collection list */
 constexpr size_t kMaxCollectionsStored = 64; /* per instance: the most recently saved ones are kept */
+constexpr size_t kMaxStoredVersionText = 64; /* longer version strings are dropped */
+constexpr int64_t kMaxStoredUnixTime = 253402300799; /* 9999-12-31: larger values are clamped */
 
 struct WindowSettings {
 	Preset preset = Preset::Scenes8;
@@ -54,11 +60,37 @@ struct WindowSettings {
 	bool operator!=(const WindowSettings &o) const { return !(*this == o); }
 };
 
+/* Global update check settings. The check is automatic by default (once a
+ * day, never while streaming or recording); see update_manager.hpp. */
+struct UpdateSettings {
+	bool auto_check = true;
+	bool include_prereleases = false;
+	/* Unix seconds of the last automatic or manual attempt, 0 = never. */
+	int64_t last_check_unix = 0;
+	/* Newest version a check reported (logged once, and the "update
+	 * available" marker at startup until it is installed or skipped). */
+	std::string last_seen_version;
+	/* The user chose "Skip this version": no marker for it. */
+	std::string skipped_version;
+
+	bool operator==(const UpdateSettings &o) const
+	{
+		return auto_check == o.auto_check && include_prereleases == o.include_prereleases &&
+		       last_check_unix == o.last_check_unix && last_seen_version == o.last_seen_version &&
+		       skipped_version == o.skipped_version;
+	}
+	bool operator!=(const UpdateSettings &o) const { return !(*this == o); }
+};
+
 struct SettingsFile {
 	std::map<int, WindowSettings> instances; /* window instance index -> settings */
 	Appearance appearance;                   /* global, shared by every window */
+	UpdateSettings updates;                  /* global */
 
-	bool operator==(const SettingsFile &o) const { return instances == o.instances && appearance == o.appearance; }
+	bool operator==(const SettingsFile &o) const
+	{
+		return instances == o.instances && appearance == o.appearance && updates == o.updates;
+	}
 	bool operator!=(const SettingsFile &o) const { return !(*this == o); }
 };
 
@@ -97,12 +129,14 @@ LoadAction decide_load(LoadOutcome outcome, ParseStatus status);
 void note_collection_saved(WindowSettings &w, const std::string &name, size_t max_collections = kMaxCollectionsStored);
 
 /* Puts the entries of `overlay` over `base`: the appearance when
- * `overlay_appearance_touched`; the options (preset, safe areas,
+ * `overlay_appearance_touched`, the update settings when
+ * `overlay_updates_touched`; the options (preset, safe areas,
  * meters) of an instance are taken from `overlay` only when its
  * options_touched is set; collections are merged by name (overlay wins).
  * Used when a file that was unreadable at first can be read later and the
  * changes made meanwhile must be applied to it. */
-void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched = false);
+void merge_settings(SettingsFile &base, const SettingsFile &overlay, bool overlay_appearance_touched = false,
+		    bool overlay_updates_touched = false);
 
 /* Assignments may be saved only when no scene collection switch is in progress
  * and the window's collection is still the current one: during a switch the
