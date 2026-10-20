@@ -24,7 +24,6 @@ constexpr int kRows = 2;
 constexpr Preset kPresets[PresetPicker::kPresetCount] = {
 	Preset::Scenes4,       Preset::Scenes8,       Preset::Scenes16,      Preset::Scenes24,      Preset::Scenes32,
 	Preset::Scenes8Status, Preset::Scenes16Status, Preset::Scenes24Status, Preset::Scenes32Status};
-constexpr int kSceneCounts[PresetPicker::kPresetCount] = {4, 8, 16, 24, 32, 8, 16, 24, 32};
 constexpr int kStatusRowFirstIndex = 5;
 
 constexpr int kCellW = kThumbW + 2 * kCellPad;
@@ -123,10 +122,15 @@ void PresetPicker::paintEvent(QPaintEvent *)
 			}
 		}
 
+		/* The number shown is the real count of scene tiles of the layout (the status
+		 * presets give four cells to ON AIR / REC / Clock / Mixer). */
+		const auto &layout = m_layouts[static_cast<size_t>(i)];
+		const int scene_count = static_cast<int>(
+			std::count_if(layout.begin(), layout.end(), [](const Tile &t) { return t.kind == TileKind::Scene; }));
 		p.setFont(font());
 		p.setPen(pal.color(QPalette::WindowText));
 		p.drawText(QRect(cell.x(), thumb.bottom() + 1, cell.width(), kLabelH), Qt::AlignCenter,
-			   (i >= kStatusRowFirstIndex ? tr("%1 scenes + status") : tr("%1 scenes")).arg(kSceneCounts[i]));
+			   (i >= kStatusRowFirstIndex ? tr("%1 scenes + status") : tr("%1 scenes")).arg(scene_count));
 	}
 }
 
