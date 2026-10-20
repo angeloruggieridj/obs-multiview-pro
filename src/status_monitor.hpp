@@ -30,7 +30,7 @@
  * Bitrate: delta of the stream output's total_bytes between two samples; the
  * first sample of each stream shows "--".
  *
- * The timer runs only while enabled; events keep the clocks right either way.
+ * The timer (re-armed to each second boundary) runs only while enabled; events keep the clocks right either way.
  * Must live on the UI thread, destroyed before the ObsState it observes. */
 class StatusMonitor : public QObject {
 	Q_OBJECT
@@ -41,16 +41,13 @@ public:
 	void set_enabled(bool enabled);
 	bool enabled() const { return m_enabled; }
 
-	/* Samples now and emits (unconditionally) the current snapshot. */
-	void refresh();
-	StatusSnapshot snapshot() const { return m_last; }
-
 signals:
 	void snapshot_changed(const StatusSnapshot &snapshot);
 
 private:
 	int64_t now_ms() const;
 	void sample();
+	void arm_timer(); /* for just past the next second boundary */
 	void sync_clocks(int64_t now);
 	void reset_bitrate();
 

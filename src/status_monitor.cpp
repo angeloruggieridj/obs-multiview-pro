@@ -7,9 +7,16 @@
 
 StatusMonitor::StatusMonitor(ObsState &state, QObject *parent) : QObject(parent), m_state(state), m_timer(this)
 {
-	m_timer.setInterval(1000);
-	m_timer.setTimerType(Qt::CoarseTimer);
-	connect(&m_timer, &QTimer::timeout, this, [this] { sample(); });
+	/* Single shot, re-armed after each sample for just past the next second
+	 * boundary: the clock tile changes right when the wall clock does, with
+	 * no drift and no half-second lag of a coarse free-running timer. */
+	m_timer.setSingleShot(true);
+	m_timer.setTimerType(Qt::PreciseTimer);
+	connect(&m_timer, &QTimer::timeout, this, [this] {
+		sample();
+		if (m_enabled)
+			arm_timer();
+	});
 
 	connect(&m_state, &ObsState::streaming_started, this, [this] {
 		m_stream.start(now_ms());
@@ -60,17 +67,18 @@ void StatusMonitor::set_enabled(bool enabled)
 	if (enabled) {
 		reset_bitrate(); /* the previous sample is stale */
 		m_have_last = false; /* always emit: the renderer may hold an old one */
-		m_timer.start();
+		arm_timer();
 		sample();
 	} else {
 		m_timer.stop();
 	}
 }
 
-void StatusMonitor::refresh()
+void StatusMonitor::arm_timer()
 {
-	m_have_last = false;
-	sample();
+	constexpr int kPastBoundaryMs = 5;
+	const int into_second = QTime::currentTime().msec();
+	m_timer.start(1000 - into_second + kPastBoundaryMs);
 }
 
 void StatusMonitor::reset_bitrate()
