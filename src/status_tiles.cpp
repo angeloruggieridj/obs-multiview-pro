@@ -36,6 +36,8 @@ QFont make_font(bool bold)
 	QFont f(QStringLiteral("Sans Serif"));
 #endif
 	f.setStyleHint(QFont::SansSerif);
+	/* Grayscale antialiasing: LCD fringes would be baked into the texture. */
+	f.setStyleStrategy(QFont::StyleStrategy(QFont::PreferAntialias | QFont::NoSubpixelAntialias));
 	f.setBold(bold);
 	f.setHintingPreference(QFont::PreferFullHinting);
 	return f;
@@ -213,10 +215,13 @@ std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const S
 		return nullptr;
 	}
 
-	QImage img(w, h, QImage::Format_ARGB32_Premultiplied);
-	img.fill(bg);
+	/* Everything is drawn on a transparent layer and put over the background
+	 * afterwards: Qt only uses grayscale antialiasing for text on a surface that
+	 * can hold alpha, and LCD fringes cannot be baked into a texture. */
+	QImage layer(w, h, QImage::Format_ARGB32_Premultiplied);
+	layer.fill(Qt::transparent);
 	{
-		QPainter p(&img);
+		QPainter p(&layer);
 		p.setRenderHint(QPainter::Antialiasing);
 		p.setRenderHint(QPainter::TextAntialiasing);
 		const Painter d(p, w, h);
@@ -237,6 +242,13 @@ std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const S
 				draw_mixer_placeholder(d);
 			break;
 		}
+	}
+
+	QImage img(w, h, QImage::Format_ARGB32_Premultiplied);
+	img.fill(bg);
+	{
+		QPainter p(&img);
+		p.drawImage(0, 0, layer);
 	}
 
 	/* Opaque: Format_ARGB32 is B, G, R, A in memory on little-endian hosts. */

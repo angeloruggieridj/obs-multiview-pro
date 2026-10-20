@@ -40,6 +40,7 @@ QFont make_label_font()
 	f.setStyleHint(QFont::TypeWriter);
 #endif
 	f.setBold(true);
+	f.setStyleStrategy(QFont::StyleStrategy(QFont::PreferAntialias | QFont::NoSubpixelAntialias));
 	f.setPixelSize(kRefPixelSize);
 	/* Only measured: hinting would add rounding noise to the scaled metrics. */
 	f.setHintingPreference(QFont::PreferNoHinting);

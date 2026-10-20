@@ -43,6 +43,8 @@ std::shared_ptr<const MeterScaleImage> render_meter_scale(const MeterGeometry &g
 #endif
 		);
 		f.setStyleHint(QFont::SansSerif);
+		/* Grayscale antialiasing: LCD fringes would be baked into the texture. */
+		f.setStyleStrategy(QFont::StyleStrategy(QFont::PreferAntialias | QFont::NoSubpixelAntialias));
 		f.setPixelSize(px);
 		f.setHintingPreference(QFont::PreferFullHinting);
 		p.setFont(f);
