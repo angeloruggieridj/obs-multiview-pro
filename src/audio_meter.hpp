@@ -28,7 +28,7 @@ std::vector<obs_source_t *> collect_scene_audio_sources(obs_source_t *scene_sour
  *  - attach_program_mix(): the program mix, from obs_add_raw_audio_callback on
  *    mix 0 (track 1), downmixed to stereo by libobs.
  *
- * Threading. attach*, detach, update_channel_layout and the destructor run on
+ * Threading. attach*, detach, update_source_state and the destructor run on
  * one thread (the Qt UI thread). The OBS callbacks run on audio / source
  * threads and ONLY write std::atomic<float>: no allocation, no lock of ours, no
  * Qt, no logging. levels() and take_peaks() may be called from any thread
@@ -65,9 +65,11 @@ public:
 	 * the references held here keep those addresses unique). */
 	bool has_sources(const std::vector<obs_source_t *> &sources) const;
 
-	/* Re-reads whether each attached source is mono (then the R bar mirrors L).
-	 * Cheap; call now and then (the renderer does it on its poll). */
-	void update_channel_layout();
+	/* Re-reads, for each attached source, whether it is mono (then the R bar
+	 * mirrors L) and whether it is muted (then it reads silence: the volmeter
+	 * itself still reports a muted source's level, like the greyed native
+	 * meter). Cheap; call now and then (the renderer does it on its poll). */
+	void update_source_state();
 
 	/* Latest callback values, dB per channel [L, R]. */
 	std::array<float, 2> levels() const;
@@ -81,6 +83,7 @@ private:
 		obs_volmeter_t *volmeter = nullptr;
 		obs_source_t *source = nullptr; /* counted reference */
 		std::atomic<bool> mono{false};
+		std::atomic<bool> muted{false};
 	};
 
 	static void volmeter_cb(void *param, const float magnitude[MAX_AUDIO_CHANNELS], const float peak[MAX_AUDIO_CHANNELS],

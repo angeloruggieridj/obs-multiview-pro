@@ -635,7 +635,7 @@ void MultiviewRenderer::poll_preview_audio()
 		/* Unchanged: drop the extra references. */
 		for (obs_source_t *s : sources)
 			obs_source_release(s);
-		m_pvw_audio.update_channel_layout();
+		m_pvw_audio.update_source_state();
 		return;
 	}
 	m_pvw_audio.attach_sources(std::move(sources));
@@ -1080,27 +1080,33 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
 
-	auto fill = [&](float x, float y, float w, float h, uint32_t argb) {
-		const uint32_t pw = uint32_t(std::lround(w));
-		const uint32_t ph = uint32_t(std::lround(h));
-		if (pw == 0 || ph == 0)
+	/* Called inside one gs_effect_loop for every quad of the meters: libobs
+	 * resets the effect parameters when the loop ends, but uploads the changed
+	 * ones at each draw, so setting the colour before each draw inside a single
+	 * loop is enough (and saves a shader switch per quad).
+	 *
+	 * A rect between two edges, each rounded to a canvas pixel: neighbours that
+	 * share an edge share the pixel row, so the runs of a bar leave no seam. */
+	auto fill = [&](float x0, float y0, float x1, float y1, uint32_t argb) {
+		const long ix0 = std::lround(x0), iy0 = std::lround(y0);
+		const long pw = std::lround(x1) - ix0, ph = std::lround(y1) - iy0;
+		if (pw <= 0 || ph <= 0)
 			return;
 		gs_matrix_push();
-		gs_matrix_translate3f(std::round(x), std::round(y), 0.0f);
-		gs_effect_set_color(color, argb);
-		while (gs_effect_loop(solid, "Solid"))
-			gs_draw_sprite(nullptr, 0, pw, ph);
+		gs_matrix_translate3f(float(ix0), float(iy0), 0.0f);
+		gs_effect_set_color(color, argb); /* uploaded by the draw below */
+		gs_draw_sprite(nullptr, 0, uint32_t(pw), uint32_t(ph));
 		gs_matrix_pop();
 	};
 
 	/* Draws a run of a bar between two fractions of its height. */
 	auto run = [&](const RectF &bar, const MeterSegment &s, bool fg) {
-		const float top = bar.y + bar.h * (1.0f - s.f1);
-		fill(bar.x, top, bar.w, bar.h * (s.f1 - s.f0), meter_color(s.zone, fg));
+		fill(bar.x, bar.y + bar.h * (1.0f - s.f1), bar.x + bar.w, bar.y + bar.h * (1.0f - s.f0),
+		     meter_color(s.zone, fg));
 	};
 
 	auto draw_meter = [&](const MeterGeometry &g, const ChannelBallistics (&st)[2]) {
-		fill(g.column.x, g.column.y, g.column.w, g.column.h, 0x99000000);
+		fill(g.column.x, g.column.y, g.column.x + g.column.w, g.column.y + g.column.h, 0x99000000);
 		MeterSegment seg[3];
 		for (int c = 0; c < 2; ++c) {
 			const RectF &bar = g.bar[c];
@@ -1113,24 +1119,26 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 			if (st[c].hold_db > kMeterMinDb) {
 				const float th = std::max(1.0f, bar.h * 0.005f);
 				const float y = std::min(meter_y_for_db(g, st[c].hold_db), bar.y + bar.h - th);
-				fill(bar.x, y, bar.w, th, peak_hold_color(st[c].hold_db));
+				fill(bar.x, y, bar.x + bar.w, y + th, peak_hold_color(st[c].hold_db));
 			}
 		}
 	};
 
 	bool scale_drawn = false;
-	for (const Tile &t : snap.tiles) {
-		if (t.kind != TileKind::Program && t.kind != TileKind::Preview)
-			continue;
-		const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
-				     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
-		if (inner.w <= 0.0f || inner.h <= 0.0f)
-			continue;
-		if (t.kind == TileKind::Program) {
-			draw_meter(meter_geometry(inner, true), m_meter.program);
-			scale_drawn = true;
-		} else {
-			draw_meter(meter_geometry(inner, false), m_meter.preview);
+	while (gs_effect_loop(solid, "Solid")) {
+		for (const Tile &t : snap.tiles) {
+			if (t.kind != TileKind::Program && t.kind != TileKind::Preview)
+				continue;
+			const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+					     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+			if (inner.w <= 0.0f || inner.h <= 0.0f)
+				continue;
+			if (t.kind == TileKind::Program) {
+				draw_meter(meter_geometry(inner, true), m_meter.program);
+				scale_drawn = true;
+			} else {
+				draw_meter(meter_geometry(inner, false), m_meter.preview);
+			}
 		}
 	}
 

@@ -115,6 +115,10 @@ void AudioMeter::volmeter_cb(void *param, const float[MAX_AUDIO_CHANNELS], const
 			     const float[MAX_AUDIO_CHANNELS])
 {
 	const Feed *feed = static_cast<const Feed *>(param);
+	if (feed->muted.load(std::memory_order_relaxed)) {
+		feed->owner->publish(kMeterFloorDb, kMeterFloorDb);
+		return;
+	}
 	const float l = sanitize_db(peak[0]);
 	const float r = feed->mono.load(std::memory_order_relaxed) ? l : sanitize_db(peak[1]);
 	feed->owner->publish(l, r);
@@ -161,6 +165,7 @@ void AudioMeter::add_source(obs_source_t *source)
 		return;
 	}
 	feed->mono.store(obs_volmeter_get_nr_channels(vm) == 1, std::memory_order_relaxed);
+	feed->muted.store(obs_source_muted(source), std::memory_order_relaxed);
 	m_entries.push_back(std::move(feed));
 }
 
@@ -232,10 +237,12 @@ bool AudioMeter::has_sources(const std::vector<obs_source_t *> &sources) const
 	return true;
 }
 
-void AudioMeter::update_channel_layout()
+void AudioMeter::update_source_state()
 {
-	for (auto &e : m_entries)
+	for (auto &e : m_entries) {
 		e->mono.store(obs_volmeter_get_nr_channels(e->volmeter) == 1, std::memory_order_relaxed);
+		e->muted.store(obs_source_muted(e->source), std::memory_order_relaxed);
+	}
 }
 
 std::array<float, 2> AudioMeter::levels() const
