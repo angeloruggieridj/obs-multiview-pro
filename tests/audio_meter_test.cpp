@@ -258,3 +258,16 @@ TEST_CASE("audio_meter_atomic_max")
 	atomic_store_max(a, -10.f);
 	CHECK(a.load() == -10.f);
 }
+
+TEST_CASE("audio_meter_input_after_gap_drops_peaks_of_a_long_gap")
+{
+	CHECK(meter_input_after_gap(-3.f, 0.016f) == -3.f);
+	CHECK(meter_input_after_gap(-3.f, kMeterMaxDt) == -3.f);
+	CHECK(meter_input_after_gap(-3.f, kMeterMaxDt + 0.01f) == kMeterFloorDb);
+	CHECK(meter_input_after_gap(-3.f, 30.f) == kMeterFloorDb);
+	/* after a long gap the bar and hold do not jump to the gap's peak */
+	ChannelBallistics b;
+	ballistics_step(b, meter_input_after_gap(-3.f, 30.f), 30.f);
+	CHECK(b.peak_db == kMeterFloorDb);
+	CHECK(b.hold_db == kMeterFloorDb);
+}

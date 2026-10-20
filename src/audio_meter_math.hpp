@@ -60,6 +60,13 @@ struct ChannelBallistics {
 void ballistics_step(ChannelBallistics &b, float input_db, float dt, float decay = kMeterDecayDbPerSec,
 		     float hold_s = kMeterPeakHoldSec);
 
+/* The level to feed ballistics_step after a frame gap of `dt` seconds: the
+ * peaks collected during a gap longer than kMeterMaxDt (display hidden or
+ * minimised, nothing consuming them) are not what was shown "now", so they are
+ * dropped (the floor) instead of flashing the loudest value of the whole gap
+ * and holding it. Otherwise `input_db` unchanged. */
+float meter_input_after_gap(float input_db, float dt);
+
 enum class MeterZone { Nominal, Warning, Error };
 
 /* A run of the bar, in fractions from the bottom (0) to the top (1). */

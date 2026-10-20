@@ -41,6 +41,11 @@ void ballistics_step(ChannelBallistics &b, float input_db, float dt, float decay
 	}
 }
 
+float meter_input_after_gap(float input_db, float dt)
+{
+	return (dt == dt && dt > kMeterMaxDt) ? kMeterFloorDb : input_db;
+}
+
 int meter_segments(float fraction, MeterSegment out[3])
 {
 	if (!(fraction == fraction) || fraction <= 0.f)

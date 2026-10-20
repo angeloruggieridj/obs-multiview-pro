@@ -1166,8 +1166,8 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	/* Outside studio mode the Preview tile shows the program (as its video). */
 	const std::array<float, 2> pvw = snap.studio_mode ? m_pvw_audio.take_peaks() : pgm;
 	for (int c = 0; c < 2; ++c) {
-		ballistics_step(m_meter.program[c], pgm[size_t(c)], dt);
-		ballistics_step(m_meter.preview[c], pvw[size_t(c)], dt);
+		ballistics_step(m_meter.program[c], meter_input_after_gap(pgm[size_t(c)], dt), dt);
+		ballistics_step(m_meter.preview[c], meter_input_after_gap(pvw[size_t(c)], dt), dt);
 	}
 
 	/* Mixer columns: the program column shares the program levels taken above
@@ -1188,8 +1188,8 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 			if (col.muted) {
 				m_meter.mixer[i][0] = m_meter.mixer[i][1] = ChannelBallistics();
 			} else {
-				ballistics_step(m_meter.mixer[i][0], in[0], dt);
-				ballistics_step(m_meter.mixer[i][1], in[1], dt);
+				ballistics_step(m_meter.mixer[i][0], meter_input_after_gap(in[0], dt), dt);
+				ballistics_step(m_meter.mixer[i][1], meter_input_after_gap(in[1], dt), dt);
 			}
 			m_mixer_hold[i].store(std::max(m_meter.mixer[i][0].hold_db, m_meter.mixer[i][1].hold_db),
 					      std::memory_order_relaxed);
