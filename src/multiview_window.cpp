@@ -70,6 +70,12 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 	/* Called only on the UI thread, from MultiviewRenderer::refresh_scenes. */
 	m_renderer->set_scene_for_slot([this](int slot) { return m_assignment.scene_for_slot(slot); });
 
+	/* Labels follow the window size once a resize settles (not on every step
+	 * of a live resize); until then the old ones are drawn scaled. */
+	m_label_scale_timer.setSingleShot(true);
+	m_label_scale_timer.setInterval(150);
+	connect(&m_label_scale_timer, &QTimer::timeout, this, &MultiviewWindow::update_label_scale);
+
 	QWindow *wh = windowHandle();
 	if (!wh) {
 		winId(); /* force creation of the native window */
@@ -93,6 +99,7 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 			create_display();
 			resize_display();
 			update_color_space();
+			update_label_scale(); /* DPI may differ */
 		});
 		wh->installEventFilter(this);
 		/* Same marker as OBSProjector: "Hide OBS windows from screen capture"
@@ -106,6 +113,7 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 MultiviewWindow::~MultiviewWindow()
 {
 	m_destroying = true;
+	m_label_scale_timer.stop();
 	/* 1. Stop drawing: removing the draw callback blocks until a callback that
 	 *    is running on the graphics thread has returned. */
 	destroy_display();
@@ -202,6 +210,7 @@ void MultiviewWindow::create_display()
 		return;
 	}
 	obs_display_add_draw_callback(m_display, &MultiviewWindow::draw_callback, this);
+	update_label_scale();
 }
 
 void MultiviewWindow::destroy_display()
@@ -239,6 +248,15 @@ void MultiviewWindow::resizeEvent(QResizeEvent *event)
 	QWidget::resizeEvent(event);
 	create_display();
 	resize_display();
+	m_label_scale_timer.start();
+}
+
+void MultiviewWindow::update_label_scale()
+{
+	if (!m_renderer || m_destroying)
+		return;
+	const QSize size = pixel_size();
+	m_renderer->set_display_size(size.width(), size.height());
 }
 
 void MultiviewWindow::moveEvent(QMoveEvent *event)
@@ -290,17 +308,33 @@ int MultiviewWindow::scene_slot_at(const QPoint &pos) const
 	return tiles[static_cast<size_t>(idx)].scene_slot;
 }
 
+int MultiviewWindow::label_slot_at(const QPoint &pos) const
+{
+	obs_video_info ovi;
+	if (!m_renderer || !obs_get_video_info(&ovi) || ovi.base_width == 0 || ovi.base_height == 0)
+		return -1;
+	/* Widget -> display pixels -> canvas pixels (same mapping as the draw). */
+	const qreal dpr = devicePixelRatioF();
+	const float aspect = float(ovi.base_width) / float(ovi.base_height);
+	const RectF fit = fit_rect(aspect, float(width() * dpr), float(height() * dpr));
+	if (fit.w <= 0.f || fit.h <= 0.f)
+		return -1;
+	const float cx = (float(pos.x() * dpr) - fit.x) / fit.w * float(ovi.base_width);
+	const float cy = (float(pos.y() * dpr) - fit.y) / fit.h * float(ovi.base_height);
+	return m_renderer->label_slot_at(cx, cy);
+}
+
 void MultiviewWindow::assignment_changed()
 {
 	if (m_renderer)
 		m_renderer->refresh_scenes();
 }
 
-/* Scene renames have no dedicated frontend event: names are re-synced (by
- * source UUID) on every scene list event and whenever the context menu opens,
- * so a rename can lag until one of those happens. Tiles keep rendering the
- * right scene meanwhile (they hold the source, not the name); only the
- * program/preview outline colour can be off until the next sync. */
+/* Re-syncs the slot names (by source UUID) with the scene list. Scene renames
+ * have no frontend event; ObsState turns the libobs "source_rename" signal
+ * into a (queued) scenes_changed, so names and labels follow a rename on the
+ * next UI event loop turn. User actions still call this first, so they never
+ * resolve a stale name even inside that window. */
 void MultiviewWindow::sync_scene_names()
 {
 	if (!m_state || !m_renderer)
@@ -335,6 +369,16 @@ void MultiviewWindow::on_scene_collection_changed()
 void MultiviewWindow::mousePressEvent(QMouseEvent *event)
 {
 	if (event->button() == Qt::LeftButton) {
+		/* On a scene label: no click, no drag; the release opens the scene
+		 * menu (native "click on the name"). */
+		m_label_press_slot = label_slot_at(event->pos());
+		if (m_label_press_slot >= 0) {
+			m_press_active = false;
+			m_dragging = false;
+			m_press_slot = -1;
+			event->accept();
+			return;
+		}
 		m_press_active = true;
 		m_dragging = false;
 		m_press_pos = event->pos();
@@ -358,6 +402,17 @@ void MultiviewWindow::mouseMoveEvent(QMouseEvent *event)
 
 void MultiviewWindow::mouseReleaseEvent(QMouseEvent *event)
 {
+	if (event->button() == Qt::LeftButton && m_label_press_slot >= 0) {
+		const int slot = m_label_press_slot;
+		m_label_press_slot = -1;
+		/* Released on the same label: open the menu. Names first, as for any
+		 * user action (a rename may not have produced an event yet). */
+		sync_scene_names();
+		if (label_slot_at(event->pos()) == slot)
+			show_scene_menu(slot, event->globalPosition().toPoint());
+		event->accept();
+		return;
+	}
 	if (event->button() != Qt::LeftButton || !m_press_active) {
 		QWidget::mouseReleaseEvent(event);
 		return;
@@ -399,6 +454,7 @@ void MultiviewWindow::mouseDoubleClickEvent(QMouseEvent *event)
 	m_press_active = false;
 	m_dragging = false;
 	m_press_slot = -1;
+	m_label_press_slot = -1;
 	if (!m_state)
 		return;
 	sync_scene_names();
@@ -419,31 +475,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 	const int slot = scene_slot_at(event->pos());
 	if (slot >= 0 && m_state) {
 		const std::string current = m_assignment.scene_for_slot(slot);
-		QMenu *choose = menu->addMenu(current.empty() ? tr("Add scene...") : tr("Assign scene"));
-		bool any = false;
-		for (const SceneRef &s : m_state->scenes()) {
-			if (!s.visible_in_multiview)
-				continue;
-			any = true;
-			const std::string name = s.name;
-			QAction *a = choose->addAction(QString::fromStdString(name).replace('&', QStringLiteral("&&")));
-			a->setCheckable(true);
-			a->setChecked(name == current);
-			connect(a, &QAction::triggered, this, [this, slot, name] {
-				/* The scene may have been deleted while the menu was open. */
-				if (!m_state)
-					return;
-				sync_scene_names();
-				for (const SceneRef &sc : m_state->scenes())
-					if (sc.name == name) {
-						m_assignment.assign(slot, name);
-						assignment_changed();
-						return;
-					}
-			});
-		}
-		if (!any)
-			choose->addAction(tr("(no scenes)"))->setEnabled(false);
+		add_scene_choices(menu->addMenu(current.empty() ? tr("Add scene...") : tr("Assign scene")), slot);
 		if (!current.empty()) {
 			QAction *rm = menu->addAction(tr("Remove scene from tile"));
 			connect(rm, &QAction::triggered, this, [this, slot] {
@@ -459,6 +491,47 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 	connect(layout, &QAction::triggered, this, [this, global_pos] { show_layout_picker(global_pos); });
 	menu->popup(global_pos);
 	event->accept();
+}
+
+void MultiviewWindow::add_scene_choices(QMenu *menu, int slot)
+{
+	if (!m_state)
+		return;
+	const std::string current = m_assignment.scene_for_slot(slot);
+	bool any = false;
+	for (const SceneRef &s : m_state->scenes()) {
+		if (!s.visible_in_multiview)
+			continue;
+		any = true;
+		const std::string name = s.name;
+		QAction *a = menu->addAction(QString::fromStdString(name).replace('&', QStringLiteral("&&")));
+		a->setCheckable(true);
+		a->setChecked(name == current);
+		connect(a, &QAction::triggered, this, [this, slot, name] {
+			/* The scene may have been deleted while the menu was open. */
+			if (!m_state)
+				return;
+			sync_scene_names();
+			for (const SceneRef &sc : m_state->scenes())
+				if (sc.name == name) {
+					m_assignment.assign(slot, name);
+					assignment_changed();
+					return;
+				}
+		});
+	}
+	if (!any)
+		menu->addAction(tr("(no scenes)"))->setEnabled(false);
+}
+
+void MultiviewWindow::show_scene_menu(int slot, const QPoint &global_pos)
+{
+	if (slot < 0 || !m_state)
+		return;
+	auto *menu = new QMenu(this);
+	menu->setAttribute(Qt::WA_DeleteOnClose);
+	add_scene_choices(menu, slot);
+	menu->popup(global_pos);
 }
 
 void MultiviewWindow::show_layout_picker(const QPoint &global_pos)

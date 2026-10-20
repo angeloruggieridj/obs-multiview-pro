@@ -12,11 +12,43 @@
 ObsState::ObsState(QObject *parent) : QObject(parent)
 {
 	obs_frontend_add_event_callback(&ObsState::on_event, this);
+	/* Renames have no frontend event; tile names and labels must follow. */
+	if (signal_handler_t *sh = obs_get_signal_handler()) {
+		signal_handler_connect(sh, "source_rename", &ObsState::on_source_rename, this);
+		m_rename_connected = true;
+	}
 }
 
 ObsState::~ObsState()
 {
+	disconnect_rename();
 	obs_frontend_remove_event_callback(&ObsState::on_event, this);
+}
+
+void ObsState::disconnect_rename()
+{
+	if (!m_rename_connected)
+		return;
+	m_rename_connected = false;
+	/* Waits for a running callback (same mutex as the emission). */
+	if (signal_handler_t *sh = obs_get_signal_handler())
+		signal_handler_disconnect(sh, "source_rename", &ObsState::on_source_rename, this);
+}
+
+void ObsState::on_source_rename(void *data, calldata_t *cd)
+{
+	obs_source_t *src = static_cast<obs_source_t *>(calldata_ptr(cd, "source"));
+	if (!src || obs_source_get_type(src) != OBS_SOURCE_TYPE_SCENE)
+		return;
+	auto *self = static_cast<ObsState *>(data);
+	/* Possibly not the UI thread: hop over. Dropped if self is gone first. */
+	QMetaObject::invokeMethod(
+		self,
+		[self] {
+			if (self->m_active)
+				emit self->scenes_changed();
+		},
+		Qt::QueuedConnection);
 }
 
 void ObsState::on_event(enum obs_frontend_event event, void *data)
@@ -33,6 +65,7 @@ void ObsState::handle_event(enum obs_frontend_event event)
 	case OBS_FRONTEND_EVENT_EXIT:
 		/* Stop touching OBS; the owner may still be alive for a moment. */
 		m_active = false;
+		disconnect_rename();
 		emit scenes_changed();
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_CHANGED:

@@ -50,11 +50,15 @@ signals:
 
 private:
 	static void on_event(enum obs_frontend_event event, void *data);
+	/* libobs "source_rename" (any thread): queues scenes_changed for scenes. */
+	static void on_source_rename(void *data, calldata_t *cd);
 	void handle_event(enum obs_frontend_event event);
+	void disconnect_rename();
 
 	bool scene_exists(const std::string &name) const;
 	void fire_pending_transition();
 
 	std::string m_pending_transition; /* scene waiting for its preview to apply */
 	bool m_active = true; /* false after OBS_FRONTEND_EVENT_EXIT */
+	bool m_rename_connected = false;
 };

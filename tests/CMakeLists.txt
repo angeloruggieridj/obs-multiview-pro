@@ -4,9 +4,11 @@ add_executable(
   layout_model_test.cpp
   click_target_test.cpp
   tile_assignment_test.cpp
+  label_metrics_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/label_metrics.cpp
 )
 target_include_directories(
   unit_tests
