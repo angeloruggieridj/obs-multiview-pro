@@ -41,6 +41,7 @@ The native OBS multiview is fixed: 8 or 24 scenes, no audio meters, no clock, no
 - **ON AIR and REC tiles.** Big red state, elapsed time, bitrate, dropped frames and connection state, service name, recording file and size.
 - **Clock tile.** Local time.
 - **Editing in place.** Click to switch, drag tiles to swap, right-click to assign or remove a scene, click a tile name to pick another scene.
+- **Settings.** Choose the border colour (the frame under and around the tiles), the label opacity and the meter opacity. Changes show live in every window.
 - **Remembers everything.** Preset, options and tile assignments are saved per window and per scene collection.
 - **Light.** The draw path does no allocation and the audio callbacks only write atomics. Meters off means no audio work at all.
 
@@ -78,10 +79,12 @@ Close OBS before copying. Needs OBS Studio 32.1 or newer.
 | Click a scene tile | Studio mode: set preview. Otherwise: set program |
 | Double-click (studio mode) | Preview, then transition to program |
 | Drag a tile onto another | Swap the two scenes |
-| Right-click a tile | Assign, remove or add a scene; layout; meters; safe areas |
+| Right-click a tile | Assign, remove or add a scene; layout; meters; safe areas; settings |
 | Click a tile name | Choose the scene for that tile |
 
 Scenes with *Show in Multiview* off are skipped, like the native one.
+
+**Settings.** Open **Tools → Multiview Settings…** or right-click a window → **Settings…**. *Border colour* is the frame under and around the tiles (default grey; the red program and green preview outlines do not change). *Label opacity* is the opacity of scene names, Preview and Program, 0–100 % (default 50 %, the native look; the label background follows it, 0 hides the labels). *Meter opacity* is the opacity of the audio meters, 0–100 % (default 100 %). The settings apply to all windows and are saved.
 
 ### Status and limits
 
@@ -127,6 +130,7 @@ Il multiview nativo di OBS è fisso: 8 o 24 scene, nessun meter audio, nessun or
 - **Riquadri ON AIR e REC.** Stato rosso grande, tempo trascorso, bitrate, frame persi e stato della connessione, nome del servizio, file e dimensione della registrazione.
 - **Riquadro orologio.** Ora locale.
 - **Modifica sul posto.** Clic per cambiare scena, trascina per scambiare, tasto destro per assegnare o togliere una scena, clic sul nome per sceglierne un'altra.
+- **Impostazioni.** Scegli il colore del bordo (la cornice sotto e attorno ai riquadri), l'opacità delle etichette e quella dei meter. Le modifiche si vedono subito in tutte le finestre.
 - **Ricorda tutto.** Preset, opzioni e assegnazioni sono salvati per finestra e per collezione di scene.
 - **Leggero.** Il disegno non alloca memoria e i callback audio scrivono solo valori atomici. Con i meter spenti non c'è alcun lavoro audio.
 
@@ -164,10 +168,12 @@ Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo.
 | Clic su un riquadro scena | Studio mode: imposta l'anteprima. Altrimenti: imposta il programma |
 | Doppio clic (studio mode) | Anteprima, poi transizione al programma |
 | Trascina un riquadro su un altro | Scambia le due scene |
-| Tasto destro su un riquadro | Assegna, togli o aggiungi una scena; layout; meter; margini di sicurezza |
+| Tasto destro su un riquadro | Assegna, togli o aggiungi una scena; layout; meter; margini di sicurezza; impostazioni |
 | Clic sul nome di un riquadro | Sceglie la scena di quel riquadro |
 
 Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo.
+
+**Impostazioni.** Apri **Strumenti → Multiview Settings…** oppure tasto destro sulla finestra → **Settings…**. *Border colour* è la cornice sotto e attorno ai riquadri (grigio di default; i contorni rosso del programma e verde dell'anteprima non cambiano). *Label opacity* è l'opacità di nomi delle scene, Preview e Program, 0–100 % (default 50 %, l'aspetto nativo; lo sfondo dell'etichetta la segue, 0 nasconde le etichette). *Meter opacity* è l'opacità dei meter audio, 0–100 % (default 100 %). Le impostazioni valgono per tutte le finestre e vengono salvate.
 
 ### Stato e limiti
 

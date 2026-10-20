@@ -10,4 +10,5 @@ First public alpha.
 - Stereo audio meters with dB scale on program and preview; mixer tile with the global audio devices.
 - ON AIR, REC and clock tiles with times, bitrate, dropped frames, connection state, service and recording file.
 - Settings saved per window and per scene collection.
+- Settings dialog (Tools > Multiview Settings, or right-click > Settings): border colour, label opacity and meter opacity, shared by all windows, with live preview.
 - Tested on Windows 11 with OBS 32.2. macOS and Linux builds are produced by CI and still untested.
