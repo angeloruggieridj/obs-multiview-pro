@@ -489,6 +489,17 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 
 	QAction *layout = menu->addAction(tr("Layout..."));
 	connect(layout, &QAction::triggered, this, [this, global_pos] { show_layout_picker(global_pos); });
+
+	/* No button bar in this window: the toggle lives in the menu. */
+	if (m_renderer) {
+		QAction *safe = menu->addAction(tr("Safe areas"));
+		safe->setCheckable(true);
+		safe->setChecked(m_renderer->safe_areas());
+		connect(safe, &QAction::toggled, this, [this](bool on) {
+			if (m_renderer)
+				m_renderer->set_safe_areas(on);
+		});
+	}
 	menu->popup(global_pos);
 	event->accept();
 }

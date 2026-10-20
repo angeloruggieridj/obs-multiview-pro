@@ -5,10 +5,12 @@ add_executable(
   click_target_test.cpp
   tile_assignment_test.cpp
   label_metrics_test.cpp
+  safe_area_geometry_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/label_metrics.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/safe_area_geometry.cpp
 )
 target_include_directories(
   unit_tests

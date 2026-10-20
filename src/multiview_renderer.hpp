@@ -4,6 +4,7 @@
 #include "label_cache.hpp"
 #include "label_metrics.hpp"
 #include "layout_model.hpp"
+#include "safe_areas.hpp"
 
 #include <obs.h>
 #include <graphics/vec2.h>
@@ -12,6 +13,7 @@
 #include <QObject>
 #include <QTimer>
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -80,6 +82,14 @@ public:
 
 	/* UI thread. Scene slot whose label box contains the canvas point, or -1. */
 	int label_slot_at(float canvas_x, float canvas_y) const;
+
+	/* UI thread. Shows or hides the native safe areas over the preview tile
+	 * (default on, as the native MultiviewDrawAreas). Handed to the graphics
+	 * thread through an atomic read once per frame; the graphics thread
+	 * creates the buffers on the first frame that wants them and destroys
+	 * them on the first frame that does not. */
+	void set_safe_areas(bool on) { m_safe_areas.store(on, std::memory_order_relaxed); }
+	bool safe_areas() const { return m_safe_areas.load(std::memory_order_relaxed); }
 
 	/* Graphics thread, from the display draw callback. */
 	void render(uint32_t cx, uint32_t cy);
@@ -179,6 +189,8 @@ private:
 
 	/* Graphics thread only (see the class comment). */
 	GfxLabels m_gfx;
+	SafeAreas m_safe;
+	std::atomic<bool> m_safe_areas{true};
 
 	std::mutex m_snapshot_mutex; /* guards the pointer only */
 	std::shared_ptr<const RenderSnapshot> m_snapshot;

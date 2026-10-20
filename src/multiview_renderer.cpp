@@ -513,11 +513,11 @@ void MultiviewRenderer::shutdown()
 	m_batch.reset();
 
 	/* The draw callback is gone (class contract), so nothing else touches
-	 * m_gfx now. gs_* objects are freed inside the graphics context; later
-	 * resources (e.g. safe area vertex buffers) belong here too. */
-	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts) {
+	 * m_gfx or m_safe now. gs_* objects are freed inside the graphics context. */
+	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_safe.ready()) {
 		obs_enter_graphics();
 		destroy_gfx_labels();
+		m_safe.shutdown();
 		obs_leave_graphics();
 	}
 	m_gfx = GfxLabels();
@@ -570,6 +570,14 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 		start_region(int(float(x) + bx * scale), int(float(y) + by * scale), int(bcx * scale),
 			     int(bcy * scale), bx, bx + bcx, by, by + bcy);
 	};
+
+	/* One atomic load per frame. Buffers are made on the first frame that
+	 * wants them and freed on the first that does not (graphics thread). */
+	const bool want_safe = m_safe_areas.load(std::memory_order_relaxed);
+	if (want_safe)
+		m_safe.init();
+	else if (m_safe.ready())
+		m_safe.shutdown();
 
 	/* Labels laid out for another canvas size are skipped until the UI
 	 * thread has rebuilt them (check_canvas). */
@@ -629,19 +637,20 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 		}
 		case TileKind::Preview: {
 			paintAreaWithColor(ix, iy, iw, ih, backgroundColor);
+			/* Content and safe areas share one region, like the native. */
+			beginContent(ix, iy, iw, ih);
 			if (snap->studio_mode) {
 				obs_source_t *src = obs_weak_source_get_source(snap->preview);
 				if (src) {
-					beginContent(ix, iy, iw, ih);
 					obs_source_video_render(src);
-					endContent();
 					obs_source_release(src);
 				}
 			} else {
-				beginContent(ix, iy, iw, ih);
 				obs_render_main_texture();
-				endContent();
 			}
+			if (want_safe)
+				m_safe.render({0.0f, 0.0f, fw, fh});
+			endContent();
 			break;
 		}
 		case TileKind::Program:
