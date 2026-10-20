@@ -29,7 +29,6 @@ void SafeAreas::render(RectF target)
 
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
-	gs_effect_set_color(color, kOutlineColor);
 
 	gs_matrix_push();
 	gs_matrix_translate3f(target.x, target.y, 0.0f);
@@ -38,6 +37,8 @@ void SafeAreas::render(RectF target)
 		if (!vb)
 			continue;
 		gs_load_vertexbuffer(vb);
+		/* libobs resets effect parameters after each effect loop: set per line, as native. */
+		gs_effect_set_color(color, kOutlineColor);
 		while (gs_effect_loop(solid, "Solid"))
 			gs_draw(GS_LINESTRIP, 0, 0);
 	}
