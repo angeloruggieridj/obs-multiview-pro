@@ -59,7 +59,11 @@ function(_setup_obs_studio)
   elseif(OS_MACOS)
     set(_cmake_generator "Xcode")
     set(_cmake_arch "-DCMAKE_OSX_ARCHITECTURES:STRING='arm64;x86_64'")
-    set(_cmake_extra "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+    set(
+      _cmake_extra
+      "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}"
+      "-DCMAKE_PROJECT_obs-studio_INCLUDE:FILEPATH=${CMAKE_CURRENT_LIST_DIR}/../macos/enable-swift.cmake"
+    )
   endif()
 
   message(STATUS "Configure ${label} (${arch})")
