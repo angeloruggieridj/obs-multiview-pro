@@ -7,6 +7,7 @@
 
 #include <QObject>
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -39,6 +40,36 @@ public:
 	 * is triggered once the preview really is `scene` (gives up after 1 s). */
 	void transition_to(const std::string &scene);
 
+	/* Output state (status tiles). All false / empty after OBS_FRONTEND_EVENT_EXIT. */
+	bool streaming_active() const;
+	bool recording_active() const;
+	bool recording_paused() const;
+
+	/* Counters of the streaming output, if there is one. The frontend output
+	 * reference is released before returning; `have` is false when OBS has no
+	 * streaming output (null) at this moment. Counters restart with each
+	 * stream. */
+	struct StreamStats {
+		bool have = false;
+		uint64_t total_bytes = 0;
+		int64_t dropped_frames = 0;
+		int64_t total_frames = 0;
+		double congestion = -1.0; /* 0..1 */
+	};
+	StreamStats stream_stats() const;
+
+	/* Display name of the stream destination: the service name from its
+	 * settings ("YouTube - RTMPS", empty for custom servers) and the server
+	 * URL (never the stream key). Empty strings when unknown. */
+	struct ServiceInfo {
+		std::string name;
+		std::string server_url;
+	};
+	ServiceInfo streaming_service() const;
+
+	/* Path of the last (while recording: current) recording file, "" if none. */
+	std::string last_recording_path() const;
+
 signals:
 	void scenes_changed();
 	/* The whole scene set was replaced (collection switch / finished loading).
@@ -47,6 +78,13 @@ signals:
 	void program_changed();
 	void preview_changed();
 	void studio_mode_changed(bool enabled);
+	/* Streaming / recording lifecycle (STARTED / STOPPED / PAUSED / UNPAUSED
+	 * frontend events). */
+	void streaming_started();
+	void streaming_stopped();
+	void recording_started();
+	void recording_stopped();
+	void recording_paused_changed(bool paused);
 
 private:
 	static void on_event(enum obs_frontend_event event, void *data);

@@ -4,6 +4,7 @@
 #include "multiview_renderer.hpp"
 #include "obs_state.hpp"
 #include "preset_picker.hpp"
+#include "status_monitor.hpp"
 
 #include <obs-module.h>
 #include <plugin-support.h>
@@ -70,6 +71,15 @@ MultiviewWindow::MultiviewWindow(QWidget *parent) : QWidget(parent, Qt::Window)
 	/* Called only on the UI thread, from MultiviewRenderer::refresh_scenes. */
 	m_renderer->set_scene_for_slot([this](int slot) { return m_assignment.scene_for_slot(slot); });
 
+	/* Status sampling (ON AIR / REC / clock tiles): runs only while the layout
+	 * has those tiles (see apply_preset). */
+	m_monitor = std::make_unique<StatusMonitor>(*m_state);
+	connect(m_monitor.get(), &StatusMonitor::snapshot_changed, this, [this](const StatusSnapshot &status) {
+		if (m_renderer)
+			m_renderer->set_status(status);
+	});
+	m_monitor->set_enabled(preset_has_status(m_renderer->preset()));
+
 	/* Labels follow the window size once a resize settles (not on every step
 	 * of a live resize); until then the old ones are drawn scaled. */
 	m_label_scale_timer.setSingleShot(true);
@@ -120,6 +130,7 @@ MultiviewWindow::~MultiviewWindow()
 	/* 2. Only now the renderer can go: nothing can call render() any more. */
 	if (m_renderer)
 		m_renderer->shutdown();
+	m_monitor.reset(); /* before the ObsState it observes */
 	m_renderer.reset();
 	m_state.reset();
 	obs_log(LOG_INFO, "MultiviewWindow destroyed");
@@ -545,20 +556,26 @@ void MultiviewWindow::show_scene_menu(int slot, const QPoint &global_pos)
 	menu->popup(global_pos);
 }
 
+void MultiviewWindow::apply_preset(Preset preset)
+{
+	if (!m_renderer || !m_state)
+		return;
+	/* Assignment first: set_preset refreshes the slots once, by name, so the
+	 * names must be current. Status tiles are not scene slots: the count is
+	 * that of the Scene tiles only. */
+	sync_scene_names();
+	m_assignment.set_slot_count(m_state->scenes(), scene_slot_count(preset));
+	if (m_monitor)
+		m_monitor->set_enabled(preset_has_status(preset));
+	m_renderer->set_preset(preset);
+}
+
 void MultiviewWindow::show_layout_picker(const QPoint &global_pos)
 {
 	if (!m_renderer)
 		return;
 	auto *picker = new PresetPicker(m_renderer->preset(), this);
-	connect(picker, &PresetPicker::preset_chosen, this, [this](Preset preset) {
-		if (m_renderer && m_state) {
-			/* Assignment first: set_preset refreshes the slots once, by name,
-			 * so the names must be current. */
-			sync_scene_names();
-			m_assignment.set_slot_count(m_state->scenes(), scene_slot_count(preset));
-			m_renderer->set_preset(preset);
-		}
-	});
+	connect(picker, &PresetPicker::preset_chosen, this, [this](Preset preset) { apply_preset(preset); });
 	/* Keep the popup on the screen it opens on. */
 	QPoint pos = global_pos;
 	if (const QScreen *screen = this->screen()) {

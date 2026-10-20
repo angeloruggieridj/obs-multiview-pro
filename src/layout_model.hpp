@@ -12,7 +12,9 @@ struct RectF {
 	float h;
 };
 
-enum class TileKind { Preview, Program, Scene };
+/* OnAir / Rec / Clock / Mixer are status tiles: they are never scene slots
+ * (scene_slot is -1) and never a click / drag / assign target. */
+enum class TileKind { Preview, Program, Scene, OnAir, Rec, Clock, Mixer };
 
 struct Tile {
 	TileKind kind;
@@ -20,9 +22,29 @@ struct Tile {
 	RectF rect;     // normalized 0..1 coordinates
 };
 
-enum class Preset { Scenes4, Scenes8, Scenes16, Scenes24, Scenes32 };
+/* "...Status" presets are the same grid as their plain family with the last
+ * four cells (bottom right) taken by status tiles: ON AIR, REC, Clock, Mixer. */
+enum class Preset {
+	Scenes4,
+	Scenes8,
+	Scenes16,
+	Scenes24,
+	Scenes32,
+	Scenes8Status,
+	Scenes16Status,
+	Scenes24Status,
+	Scenes32Status
+};
 
-/* Tiles in order: Preview, Program, then Scene slots 0..N-1. */
+bool preset_has_status(Preset preset);
+/* The "con stato" twin of a plain preset (Scenes4 has none and maps to itself;
+ * a status preset maps to itself). */
+Preset preset_with_status(Preset preset);
+/* The "solo scene" twin of a status preset (a plain preset maps to itself). */
+Preset preset_without_status(Preset preset);
+
+/* Tiles in order: Preview, Program, then Scene slots 0..N-1, then (status
+ * presets) ON AIR, REC, Clock, Mixer. */
 std::vector<Tile> build_layout(Preset preset);
 
 /* Index of the tile containing (nx, ny), or -1. Rects are half-open

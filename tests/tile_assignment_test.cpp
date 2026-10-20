@@ -206,3 +206,39 @@ TEST_CASE("state_assignment_assign_after_rename_keeps_id_for_next_rename")
 	a.on_scene_list_changed(v);
 	CHECK(a.scene_for_slot(3) == "B3");
 }
+
+#include "layout_model.hpp"
+
+static int scene_count_of(Preset p)
+{
+	int n = 0;
+	for (const Tile &t : build_layout(p))
+		if (t.kind == TileKind::Scene)
+			++n;
+	return n;
+}
+
+TEST_CASE("state_assignment_switching_between_plain_and_status_presets_keeps_surviving_slots")
+{
+	TileAssignment a;
+	const auto scenes = scenes_named({"A", "B", "C", "D", "E", "F", "G", "H", "I"});
+	a.reset_from(scenes, scene_count_of(Preset::Scenes8));
+	a.assign(1, "H"); /* user rearranged: slot 1 = H */
+	a.assign(2, "");  /* slot 2 emptied */
+	REQUIRE(a.scene_for_slot(7) == "B"); /* H swapped with B */
+
+	/* 8 -> 8 with status: only 4 scene slots; the first four keep their content. */
+	a.set_slot_count(scenes, scene_count_of(Preset::Scenes8Status));
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1) == "H");
+	CHECK(a.scene_for_slot(2).empty());
+	CHECK(a.scene_for_slot(3) == "D");
+	CHECK(a.scene_for_slot(4).empty()); /* no slot there any more */
+
+	/* And back: the surviving slots are untouched. */
+	a.set_slot_count(scenes, scene_count_of(Preset::Scenes8));
+	CHECK(a.scene_for_slot(0) == "A");
+	CHECK(a.scene_for_slot(1) == "H");
+	CHECK(a.scene_for_slot(2).empty());
+	CHECK(a.scene_for_slot(3) == "D");
+}

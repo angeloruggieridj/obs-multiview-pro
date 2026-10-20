@@ -89,9 +89,100 @@ void ObsState::handle_event(enum obs_frontend_event event)
 	case OBS_FRONTEND_EVENT_STUDIO_MODE_DISABLED:
 		emit studio_mode_changed(false);
 		break;
+	case OBS_FRONTEND_EVENT_STREAMING_STARTED:
+		emit streaming_started();
+		break;
+	case OBS_FRONTEND_EVENT_STREAMING_STOPPED:
+		emit streaming_stopped();
+		break;
+	case OBS_FRONTEND_EVENT_RECORDING_STARTED:
+		emit recording_started();
+		break;
+	case OBS_FRONTEND_EVENT_RECORDING_STOPPED:
+		emit recording_stopped();
+		break;
+	case OBS_FRONTEND_EVENT_RECORDING_PAUSED:
+		emit recording_paused_changed(true);
+		break;
+	case OBS_FRONTEND_EVENT_RECORDING_UNPAUSED:
+		emit recording_paused_changed(false);
+		break;
 	default:
 		break;
 	}
+}
+
+bool ObsState::streaming_active() const
+{
+	return m_active && obs_frontend_streaming_active();
+}
+
+bool ObsState::recording_active() const
+{
+	return m_active && obs_frontend_recording_active();
+}
+
+bool ObsState::recording_paused() const
+{
+	return m_active && obs_frontend_recording_active() && obs_frontend_recording_paused();
+}
+
+ObsState::StreamStats ObsState::stream_stats() const
+{
+	StreamStats st;
+	if (!m_active)
+		return st;
+	/* Counted reference (may be null): always released. */
+	obs_output_t *out = obs_frontend_get_streaming_output();
+	if (!out)
+		return st;
+	st.have = true;
+	st.total_bytes = obs_output_get_total_bytes(out);
+	st.dropped_frames = obs_output_get_frames_dropped(out);
+	st.total_frames = obs_output_get_total_frames(out);
+	st.congestion = double(obs_output_get_congestion(out));
+	obs_output_release(out);
+	return st;
+}
+
+ObsState::ServiceInfo ObsState::streaming_service() const
+{
+	ServiceInfo info;
+	if (!m_active)
+		return info;
+	/* NOT a counted reference: the frontend returns the pointer it owns
+	 * (OBSBasic::GetService, OBS 32.1), so it is not released here. It is only
+	 * used on this (UI) thread, right now, and the strings are copied. */
+	obs_service_t *service = obs_frontend_get_streaming_service();
+	if (!service)
+		return info;
+	/* Counted reference (may be null): always released. */
+	obs_data_t *settings = obs_service_get_settings(service);
+	if (settings) {
+		/* rtmp_common stores the chosen service ("YouTube - RTMPS") here; the
+		 * stream key is never read. */
+		const char *name = obs_data_get_string(settings, "service");
+		if (name)
+			info.name = name;
+		obs_data_release(settings);
+	}
+	const char *url = obs_service_get_connect_info(service, OBS_SERVICE_CONNECT_INFO_SERVER_URL);
+	if (url)
+		info.server_url = url;
+	return info;
+}
+
+std::string ObsState::last_recording_path() const
+{
+	if (!m_active)
+		return std::string();
+	/* bstrdup'ed by the frontend: freed with bfree. */
+	char *path = obs_frontend_get_last_recording();
+	if (!path)
+		return std::string();
+	std::string out(path);
+	bfree(path);
+	return out;
 }
 
 std::vector<SceneRef> ObsState::scenes() const

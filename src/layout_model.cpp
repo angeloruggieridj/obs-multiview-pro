@@ -21,7 +21,7 @@ struct GridSpec {
 
 GridSpec spec_for(Preset preset)
 {
-	switch (preset) {
+	switch (preset_without_status(preset)) {
 	case Preset::Scenes4:
 		return {4, 1, 1.f / 2, 0.f, 1.f / 4, 0.f, 1.f / 2};
 	case Preset::Scenes16:
@@ -47,16 +47,69 @@ std::vector<Tile> build_layout(Preset preset)
 	tiles.push_back({TileKind::Preview, -1, {s.pvw_x, 0.f, s.pvw_size, s.pvw_size}});
 	tiles.push_back({TileKind::Program, -1, {s.pvw_x + s.pvw_size, 0.f, s.pvw_size, s.pvw_size}});
 
+	/* The last four cells of a status preset, in grid order. */
+	static constexpr TileKind kStatusKinds[4] = {TileKind::OnAir, TileKind::Rec, TileKind::Clock, TileKind::Mixer};
+	const int cells = s.cols * s.rows;
+	const int first_status = preset_has_status(preset) ? cells - 4 : cells;
+
 	int slot = 0;
+	int index = 0;
 	for (int r = 0; r < s.rows; ++r) {
-		for (int c = 0; c < s.cols; ++c) {
-			tiles.push_back({TileKind::Scene,
-					 slot++,
-					 {s.grid_x + static_cast<float>(c) * s.cell,
-					  s.grid_y + static_cast<float>(r) * s.cell, s.cell, s.cell}});
+		for (int c = 0; c < s.cols; ++c, ++index) {
+			const RectF rect{s.grid_x + static_cast<float>(c) * s.cell,
+					 s.grid_y + static_cast<float>(r) * s.cell, s.cell, s.cell};
+			if (index >= first_status)
+				tiles.push_back({kStatusKinds[index - first_status], -1, rect});
+			else
+				tiles.push_back({TileKind::Scene, slot++, rect});
 		}
 	}
 	return tiles;
+}
+
+bool preset_has_status(Preset preset)
+{
+	switch (preset) {
+	case Preset::Scenes8Status:
+	case Preset::Scenes16Status:
+	case Preset::Scenes24Status:
+	case Preset::Scenes32Status:
+		return true;
+	default:
+		return false;
+	}
+}
+
+Preset preset_with_status(Preset preset)
+{
+	switch (preset) {
+	case Preset::Scenes8:
+		return Preset::Scenes8Status;
+	case Preset::Scenes16:
+		return Preset::Scenes16Status;
+	case Preset::Scenes24:
+		return Preset::Scenes24Status;
+	case Preset::Scenes32:
+		return Preset::Scenes32Status;
+	default:
+		return preset;
+	}
+}
+
+Preset preset_without_status(Preset preset)
+{
+	switch (preset) {
+	case Preset::Scenes8Status:
+		return Preset::Scenes8;
+	case Preset::Scenes16Status:
+		return Preset::Scenes16;
+	case Preset::Scenes24Status:
+		return Preset::Scenes24;
+	case Preset::Scenes32Status:
+		return Preset::Scenes32;
+	default:
+		return preset;
+	}
 }
 
 int hit_test(const std::vector<Tile> &tiles, float nx, float ny)
@@ -94,7 +147,8 @@ std::vector<RectF> uncovered_areas(const std::vector<Tile> &tiles)
 
 	for (const Tile &t : tiles) {
 		const RectF &r = t.rect;
-		if (t.kind == TileKind::Scene) {
+		/* Status tiles sit in the grid like scene tiles. */
+		if (t.kind != TileKind::Preview && t.kind != TileKind::Program) {
 			has_grid = true;
 			gx0 = std::min(gx0, r.x);
 			gy0 = std::min(gy0, r.y);

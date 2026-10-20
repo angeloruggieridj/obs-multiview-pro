@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QPalette>
 
+#include <algorithm>
+
 namespace {
 constexpr int kMargin = 10;
 constexpr int kGap = 8;
@@ -14,9 +16,16 @@ constexpr int kThumbH = 72; /* 16:9, like the canvas */
 constexpr int kLabelH = 20;
 constexpr int kCellPad = 4;
 
-constexpr Preset kPresets[PresetPicker::kPresetCount] = {Preset::Scenes4, Preset::Scenes8, Preset::Scenes16,
-							  Preset::Scenes24, Preset::Scenes32};
-constexpr int kSceneCounts[PresetPicker::kPresetCount] = {4, 8, 16, 24, 32};
+/* Row 0: "scenes only" (native-identical). Row 1: the same grids with the four
+ * status tiles (ON AIR, REC, Clock, Mixer) in the last cells; there is no
+ * 4-scene one, so row 1 starts under the second column. */
+constexpr int kColumns = 5;
+constexpr int kRows = 2;
+constexpr Preset kPresets[PresetPicker::kPresetCount] = {
+	Preset::Scenes4,       Preset::Scenes8,       Preset::Scenes16,      Preset::Scenes24,      Preset::Scenes32,
+	Preset::Scenes8Status, Preset::Scenes16Status, Preset::Scenes24Status, Preset::Scenes32Status};
+constexpr int kSceneCounts[PresetPicker::kPresetCount] = {4, 8, 16, 24, 32, 8, 16, 24, 32};
+constexpr int kStatusRowFirstIndex = 5;
 
 constexpr int kCellW = kThumbW + 2 * kCellPad;
 constexpr int kCellH = kThumbH + kLabelH + 2 * kCellPad;
@@ -29,7 +38,7 @@ PresetPicker::PresetPicker(Preset current, QWidget *parent)
 	setMouseTracking(true);
 	for (int i = 0; i < kPresetCount; ++i)
 		m_layouts[static_cast<size_t>(i)] = build_layout(kPresets[i]);
-	setFixedSize(2 * kMargin + kPresetCount * kCellW + (kPresetCount - 1) * kGap, 2 * kMargin + kCellH);
+	setFixedSize(2 * kMargin + kColumns * kCellW + (kColumns - 1) * kGap, 2 * kMargin + kRows * kCellH + (kRows - 1) * kGap);
 }
 
 Preset PresetPicker::preset_at(int index)
@@ -39,7 +48,10 @@ Preset PresetPicker::preset_at(int index)
 
 QRect PresetPicker::cell_rect(int index) const
 {
-	return QRect(kMargin + index * (kCellW + kGap), kMargin, kCellW, kCellH);
+	const bool status_row = index >= kStatusRowFirstIndex;
+	const int column = status_row ? index - kStatusRowFirstIndex + 1 : index;
+	const int row = status_row ? 1 : 0;
+	return QRect(kMargin + column * (kCellW + kGap), kMargin + row * (kCellH + kGap), kCellW, kCellH);
 }
 
 int PresetPicker::index_at(const QPoint &pos) const
@@ -77,12 +89,44 @@ void PresetPicker::paintEvent(QPaintEvent *)
 				fill = QColor(0x00, 0x90, 0x00);
 			else if (t.kind == TileKind::Program)
 				fill = QColor(0x90, 0x00, 0x00);
-			p.fillRect(QRect(thumb.x() + r.x, thumb.y() + r.y, r.w, r.h).adjusted(0, 0, -1, -1), fill);
+			const char *caption = nullptr;
+			switch (t.kind) {
+			case TileKind::OnAir:
+				fill = QColor(0x7A, 0x14, 0x14);
+				caption = "ON AIR";
+				break;
+			case TileKind::Rec:
+				fill = QColor(0x8A, 0x4A, 0x10);
+				caption = "REC";
+				break;
+			case TileKind::Clock:
+				fill = QColor(0x1F, 0x3F, 0x7A);
+				caption = "12:00";
+				break;
+			case TileKind::Mixer:
+				fill = QColor(0x1F, 0x6A, 0x5A);
+				caption = "Mix";
+				break;
+			default:
+				break;
+			}
+			const QRect tile = QRect(thumb.x() + r.x, thumb.y() + r.y, r.w, r.h).adjusted(0, 0, -1, -1);
+			p.fillRect(tile, fill);
+			/* Status tiles get a short caption when the cell is big enough. */
+			if (caption && tile.height() >= 14) {
+				QFont f = p.font();
+				f.setPixelSize(std::max(6, std::min(9, tile.height() / 2)));
+				f.setBold(true);
+				p.setFont(f);
+				p.setPen(Qt::white);
+				p.drawText(tile, Qt::AlignCenter, QString::fromLatin1(caption));
+			}
 		}
 
+		p.setFont(font());
 		p.setPen(pal.color(QPalette::WindowText));
 		p.drawText(QRect(cell.x(), thumb.bottom() + 1, cell.width(), kLabelH), Qt::AlignCenter,
-			   tr("%1 scenes").arg(kSceneCounts[i]));
+			   (i >= kStatusRowFirstIndex ? tr("%1 scenes + status") : tr("%1 scenes")).arg(kSceneCounts[i]));
 	}
 }
 

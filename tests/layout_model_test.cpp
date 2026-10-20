@@ -297,3 +297,127 @@ TEST_CASE("layout_pixel_rect_adjacent_tiles_share_edges_without_gaps")
 			}
 	}
 }
+
+namespace {
+const Preset kStatusPresets[] = {Preset::Scenes8Status, Preset::Scenes16Status, Preset::Scenes24Status,
+				 Preset::Scenes32Status};
+
+bool is_status_kind(TileKind k)
+{
+	return k == TileKind::OnAir || k == TileKind::Rec || k == TileKind::Clock || k == TileKind::Mixer;
+}
+} // namespace
+
+TEST_CASE("layout_status_presets_scene_and_status_counts")
+{
+	const int scenes[] = {4, 12, 20, 28};
+	for (int i = 0; i < 4; ++i) {
+		const auto tiles = build_layout(kStatusPresets[i]);
+		CHECK(count_kind(tiles, TileKind::Preview) == 1);
+		CHECK(count_kind(tiles, TileKind::Program) == 1);
+		CHECK(count_kind(tiles, TileKind::Scene) == scenes[i]);
+		CHECK(count_kind(tiles, TileKind::OnAir) == 1);
+		CHECK(count_kind(tiles, TileKind::Rec) == 1);
+		CHECK(count_kind(tiles, TileKind::Clock) == 1);
+		CHECK(count_kind(tiles, TileKind::Mixer) == 1);
+		CHECK(tiles.size() == size_t(scenes[i] + 6));
+	}
+}
+
+TEST_CASE("layout_status_presets_scene_slots_sequential_and_status_has_none")
+{
+	for (Preset p : kStatusPresets) {
+		int expected = 0;
+		for (const Tile &t : build_layout(p)) {
+			if (t.kind == TileKind::Scene)
+				CHECK(t.scene_slot == expected++);
+			else
+				CHECK(t.scene_slot == -1);
+		}
+	}
+}
+
+TEST_CASE("layout_status_presets_take_the_last_four_grid_cells_in_order")
+{
+	for (size_t i = 0; i < 4; ++i) {
+		const Preset status = kStatusPresets[i];
+		const Preset plain = kAllPresets[i + 1]; /* Scenes8..Scenes32 */
+		const auto s = build_layout(status);
+		const auto p = build_layout(plain);
+		REQUIRE(s.size() == p.size());
+		/* Same geometry tile for tile; only the kind of the last four changes. */
+		const size_t n = p.size();
+		for (size_t k = 0; k < n; ++k)
+			CHECK(rect_eq(s[k].rect, p[k].rect));
+		for (size_t k = 0; k + 4 < n; ++k)
+			CHECK(s[k].kind == p[k].kind);
+		CHECK(s[n - 4].kind == TileKind::OnAir);
+		CHECK(s[n - 3].kind == TileKind::Rec);
+		CHECK(s[n - 2].kind == TileKind::Clock);
+		CHECK(s[n - 1].kind == TileKind::Mixer);
+	}
+}
+
+TEST_CASE("layout_status_presets_no_overlap_and_complete_the_canvas")
+{
+	for (Preset p : kStatusPresets) {
+		const auto tiles = build_layout(p);
+		const auto fillers = uncovered_areas(tiles);
+		float total = 0.f;
+		for (size_t i = 0; i < tiles.size(); ++i) {
+			total += area(tiles[i].rect);
+			for (size_t j = i + 1; j < tiles.size(); ++j)
+				CHECK_FALSE(overlap(tiles[i].rect, tiles[j].rect));
+		}
+		for (const RectF &f : fillers) {
+			total += area(f);
+			for (const Tile &t : tiles)
+				CHECK_FALSE(overlap(f, t.rect));
+		}
+		CHECK(std::abs(total - 1.f) < 1e-4f);
+	}
+}
+
+TEST_CASE("layout_status_presets_have_the_same_fillers_as_their_plain_family")
+{
+	for (size_t i = 0; i < 4; ++i) {
+		const auto a = uncovered_areas(build_layout(kStatusPresets[i]));
+		const auto b = uncovered_areas(build_layout(kAllPresets[i + 1]));
+		REQUIRE(a.size() == b.size());
+		for (size_t k = 0; k < a.size(); ++k)
+			CHECK(rect_eq(a[k], b[k]));
+	}
+}
+
+TEST_CASE("layout_hit_test_on_status_tiles_never_returns_a_scene_tile")
+{
+	for (Preset p : kStatusPresets) {
+		const auto tiles = build_layout(p);
+		for (const Tile &t : tiles) {
+			if (!is_status_kind(t.kind))
+				continue;
+			const int idx = hit_test(tiles, t.rect.x + t.rect.w / 2, t.rect.y + t.rect.h / 2);
+			REQUIRE(idx >= 0);
+			CHECK(tiles[size_t(idx)].kind == t.kind);
+			CHECK(tiles[size_t(idx)].kind != TileKind::Scene);
+			CHECK(tiles[size_t(idx)].scene_slot == -1);
+		}
+	}
+}
+
+TEST_CASE("layout_plain_presets_are_not_status_and_the_family_helpers_map")
+{
+	for (Preset p : kAllPresets)
+		CHECK_FALSE(preset_has_status(p));
+	for (Preset p : kStatusPresets)
+		CHECK(preset_has_status(p));
+	CHECK(preset_with_status(Preset::Scenes8) == Preset::Scenes8Status);
+	CHECK(preset_with_status(Preset::Scenes16) == Preset::Scenes16Status);
+	CHECK(preset_with_status(Preset::Scenes24) == Preset::Scenes24Status);
+	CHECK(preset_with_status(Preset::Scenes32) == Preset::Scenes32Status);
+	CHECK(preset_with_status(Preset::Scenes4) == Preset::Scenes4); /* no 4-tile status family */
+	CHECK(preset_with_status(Preset::Scenes24Status) == Preset::Scenes24Status);
+	CHECK(preset_without_status(Preset::Scenes8Status) == Preset::Scenes8);
+	CHECK(preset_without_status(Preset::Scenes32Status) == Preset::Scenes32);
+	CHECK(preset_without_status(Preset::Scenes16) == Preset::Scenes16);
+}

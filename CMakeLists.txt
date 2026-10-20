@@ -41,6 +41,8 @@ target_sources(
     src/layout_model.hpp src/tile_assignment.cpp src/tile_assignment.hpp src/scene_ref.hpp src/multiview_renderer.cpp src/multiview_renderer.hpp src/preset_picker.cpp src/preset_picker.hpp
     src/label_metrics.cpp src/label_metrics.hpp src/label_cache.cpp src/label_cache.hpp
     src/safe_areas.cpp src/safe_areas.hpp src/safe_area_geometry.cpp src/safe_area_geometry.hpp
+    src/status_format.cpp src/status_format.hpp src/status_tiles.cpp src/status_tiles.hpp
+    src/status_monitor.cpp src/status_monitor.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 

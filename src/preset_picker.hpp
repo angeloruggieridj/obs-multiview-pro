@@ -8,7 +8,8 @@
 
 #include <array>
 
-/* Popup that shows one thumbnail per layout preset, drawn with QPainter from
+/* Popup that shows one thumbnail per layout preset (two rows: "scenes" and
+ * "scenes + status"), drawn with QPainter from
  * build_layout (the same geometry the renderer uses). Clicking a thumbnail
  * emits preset_chosen and closes the popup; Esc or a click outside closes it
  * without a choice. UI only: nothing here runs on the draw path. */
@@ -16,7 +17,8 @@ class PresetPicker : public QWidget {
 	Q_OBJECT
 
 public:
-	static constexpr int kPresetCount = 5;
+	/* Row 0: scenes only (5 grids); row 1: the 4 grids with status tiles. */
+	static constexpr int kPresetCount = 9;
 
 	explicit PresetPicker(Preset current, QWidget *parent = nullptr);
 

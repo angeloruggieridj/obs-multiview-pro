@@ -3,6 +3,7 @@
 
 #include <obs.h>
 
+#include "layout_model.hpp"
 #include "tile_assignment.hpp"
 
 #include <QPoint>
@@ -14,6 +15,7 @@
 
 class ObsState;
 class MultiviewRenderer;
+class StatusMonitor;
 class QMenu;
 
 /* Top-level multiview window with its own obs_display (public API only, set up
@@ -44,6 +46,10 @@ private:
 	static void draw_callback(void *param, uint32_t cx, uint32_t cy);
 
 	void show_layout_picker(const QPoint &global_pos);
+	/* Switches the layout: scene assignments of the slots that survive are
+	 * kept, and the status sampling runs only while the layout has status
+	 * tiles. */
+	void apply_preset(Preset preset);
 	/* Scene slot under a widget position (letterbox and devicePixelRatio
 	 * accounted for), or -1 for PVW / PGM / outside every tile. */
 	int scene_slot_at(const QPoint &pos) const;
@@ -68,6 +74,7 @@ private:
 	TileAssignment m_assignment; /* UI thread only */
 	std::unique_ptr<ObsState> m_state;
 	std::unique_ptr<MultiviewRenderer> m_renderer;
+	std::unique_ptr<StatusMonitor> m_monitor; /* observes m_state: destroyed before it */
 	obs_display_t *m_display = nullptr;
 	bool m_destroying = false;
 	bool m_window_handle_warned = false;

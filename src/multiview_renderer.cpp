@@ -216,6 +216,7 @@ void MultiviewRenderer::rebuild_snapshot()
 		snap->preview = weak_by_name(preview);
 
 	build_labels(*snap);
+	build_status(*snap);
 	publish(std::move(snap));
 }
 
@@ -264,13 +265,7 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		finish();
 		return;
 	}
-	/* Display px per canvas px, in 1% steps so tiny size changes do not
-	 * redraw every label. */
-	float display_scale = 1.0f;
-	if (m_display_cx > 0 && m_display_cy > 0) {
-		const RectF fit = fit_rect(fw / fh, float(m_display_cx), float(m_display_cy));
-		display_scale = std::max(0.01f, std::round(fit.w / fw * 100.f) / 100.f);
-	}
+	const float dscale = display_scale(fw, fh);
 
 	for (const Tile &t : m_tiles) {
 		QString text;
@@ -292,12 +287,17 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 			pvw_pgm = false;
 			break;
 		}
+		case TileKind::OnAir:
+		case TileKind::Rec:
+		case TileKind::Clock:
+		case TileKind::Mixer:
+			continue; /* status tiles draw their own text (build_status) */
 		}
 
 		const RectF r = canvas_rect(t.rect);
 		const int face = label_face_size(ovi.base_height, pvw_pgm);
 		std::shared_ptr<const LabelImage> img =
-			m_labels.get(text, face, label_max_cx(r.w, scale), scale, display_scale);
+			m_labels.get(text, face, label_max_cx(r.w, scale), scale, dscale);
 		if (!img)
 			continue;
 		const LabelGeometry g = label_geometry(r, img->size, scale);
@@ -393,6 +393,176 @@ MultiviewRenderer::make_batch(const std::vector<PlacedLabel> &placed)
 			batch->text_uvs.push_back(uv[k]);
 	}
 	return batch;
+}
+
+/* Display px per canvas px, in 1% steps so tiny size changes do not redraw
+ * every label or status tile. */
+float MultiviewRenderer::display_scale(float fw, float fh) const
+{
+	float scale = 1.0f;
+	if (m_display_cx > 0 && m_display_cy > 0) {
+		const RectF fit = fit_rect(fw / fh, float(m_display_cx), float(m_display_cy));
+		scale = std::max(0.01f, std::round(fit.w / fw * 100.f) / 100.f);
+	}
+	return scale;
+}
+
+namespace {
+bool is_status_tile(TileKind k)
+{
+	return k == TileKind::OnAir || k == TileKind::Rec || k == TileKind::Clock || k == TileKind::Mixer;
+}
+} // namespace
+
+void MultiviewRenderer::set_status(const StatusSnapshot &status)
+{
+	if (m_shut_down)
+		return;
+	m_status = status;
+	for (const Tile &t : m_tiles)
+		if (is_status_tile(t.kind)) {
+			rebuild_snapshot();
+			return;
+		}
+}
+
+/* Rasterizes the status tiles that need it (text or size changed) and packs
+ * them into the snapshot's StatusBatch (reused as is when nothing changed). */
+void MultiviewRenderer::build_status(RenderSnapshot &snap)
+{
+	std::vector<PlacedStatus> placed;
+	std::vector<StatusCacheEntry> cache;
+
+	if (m_canvas_cx > 0 && m_canvas_cy > 0) {
+		const float fw = float(m_canvas_cx);
+		const float fh = float(m_canvas_cy);
+		const float dscale = display_scale(fw, fh);
+		for (const Tile &t : m_tiles) {
+			if (!is_status_tile(t.kind))
+				continue;
+			/* Same inner rect as render() paints. */
+			const float ix = snap_px(t.rect.x * fw) + thickness;
+			const float iy = snap_px(t.rect.y * fh) + thickness;
+			const float iw = snap_px(t.rect.w * fw) - thicknessx2;
+			const float ih = snap_px(t.rect.h * fh) - thicknessx2;
+			if (iw <= 0.0f || ih <= 0.0f)
+				continue;
+			const int w = std::min(2048, std::max(1, int(std::lround(iw * dscale))));
+			const int h = std::min(2048, std::max(1, int(std::lround(ih * dscale))));
+
+			StatusCacheEntry entry;
+			for (const StatusCacheEntry &old : m_status_cache)
+				if (old.kind == t.kind && old.w == w && old.h == h && old.image &&
+				    status_tile_content_equal(t.kind, old.content, m_status)) {
+					entry = old;
+					break;
+				}
+			if (!entry.image) {
+				entry.kind = t.kind;
+				entry.w = w;
+				entry.h = h;
+				entry.content = m_status;
+				entry.image = render_status_tile(t.kind, m_status, w, h);
+			}
+			if (!entry.image)
+				continue;
+			placed.push_back({entry.image, {ix, iy, iw, ih}});
+			cache.push_back(std::move(entry));
+		}
+	}
+	m_status_cache = std::move(cache);
+
+	if (!(placed == m_status_placed)) {
+		m_status_batch = placed.empty() ? nullptr : make_status_batch(placed);
+		m_status_placed = std::move(placed);
+	}
+	snap.status = m_status_batch;
+}
+
+std::shared_ptr<const MultiviewRenderer::StatusBatch>
+MultiviewRenderer::make_status_batch(const std::vector<PlacedStatus> &placed)
+{
+	constexpr uint32_t kPad = 2; /* transparent texels between cells */
+	uint32_t cell_w = 0, cell_h = 0;
+	for (const PlacedStatus &p : placed) {
+		cell_w = std::max(cell_w, uint32_t(p.image->w));
+		cell_h = std::max(cell_h, uint32_t(p.image->h));
+	}
+	const uint32_t n = uint32_t(placed.size());
+	const uint32_t cols = n > 1 ? 2 : 1;
+	const uint32_t rows = (n + cols - 1) / cols;
+
+	auto batch = std::make_shared<StatusBatch>();
+	batch->id = m_next_status_id++;
+	batch->atlas_cx = cols * cell_w + (cols - 1) * kPad;
+	batch->atlas_cy = rows * cell_h + (rows - 1) * kPad;
+	batch->atlas.assign(size_t(batch->atlas_cx) * batch->atlas_cy * 4, 0);
+
+	for (uint32_t i = 0; i < n; ++i) {
+		const PlacedStatus &p = placed[i];
+		const StatusTileImage &img = *p.image;
+		const uint32_t ox = (i % cols) * (cell_w + kPad);
+		const uint32_t oy = (i / cols) * (cell_h + kPad);
+		const size_t row = size_t(img.w) * 4;
+		for (int r = 0; r < img.h; ++r)
+			std::memcpy(batch->atlas.data() + ((size_t(oy) + size_t(r)) * batch->atlas_cx + ox) * 4,
+				    img.pixels.data() + row * size_t(r), row);
+
+		const float x0 = p.rect.x, y0 = p.rect.y, x1 = p.rect.x + p.rect.w, y1 = p.rect.y + p.rect.h;
+		vec3 v[4];
+		vec3_set(&v[0], x0, y0, 0.0f);
+		vec3_set(&v[1], x1, y0, 0.0f);
+		vec3_set(&v[2], x0, y1, 0.0f);
+		vec3_set(&v[3], x1, y1, 0.0f);
+		/* Half a texel inside, so bilinear filtering never reads the padding. */
+		const float u0 = (float(ox) + 0.5f) / float(batch->atlas_cx);
+		const float v0 = (float(oy) + 0.5f) / float(batch->atlas_cy);
+		const float u1 = (float(ox + uint32_t(img.w)) - 0.5f) / float(batch->atlas_cx);
+		const float v1 = (float(oy + uint32_t(img.h)) - 0.5f) / float(batch->atlas_cy);
+		vec2 uv[4];
+		vec2_set(&uv[0], u0, v0);
+		vec2_set(&uv[1], u1, v0);
+		vec2_set(&uv[2], u0, v1);
+		vec2_set(&uv[3], u1, v1);
+		for (int k : {0, 1, 2, 1, 3, 2}) {
+			batch->points.push_back(v[k]);
+			batch->uvs.push_back(uv[k]);
+		}
+	}
+	return batch;
+}
+
+bool MultiviewRenderer::upload_status(const StatusBatch &batch)
+{
+	if (m_gfx_status.id == batch.id)
+		return m_gfx_status.atlas && m_gfx_status.quads;
+
+	/* New batch: free the previous one here, in the graphics context. Happens
+	 * only when a tile changed (at most once a second), never per frame. */
+	destroy_gfx_status();
+	m_gfx_status.id = batch.id; /* also on failure: not retried every frame */
+	if (batch.atlas.empty() || batch.points.empty())
+		return false;
+
+	const uint8_t *data = batch.atlas.data();
+	m_gfx_status.atlas = gs_texture_create(batch.atlas_cx, batch.atlas_cy, GS_BGRA, 1, &data, 0);
+
+	gs_tvertarray uvs = {2, const_cast<vec2 *>(batch.uvs.data())};
+	gs_vb_data quads = {};
+	quads.num = batch.points.size();
+	quads.points = const_cast<vec3 *>(batch.points.data());
+	quads.num_tex = 1;
+	quads.tvarray = &uvs;
+	m_gfx_status.quads = gs_vertexbuffer_create(&quads, GS_DUP_BUFFER);
+	m_gfx_status.vertices = uint32_t(batch.points.size());
+	return m_gfx_status.atlas && m_gfx_status.quads;
+}
+
+void MultiviewRenderer::destroy_gfx_status()
+{
+	gs_texture_destroy(m_gfx_status.atlas); /* all null-safe */
+	gs_vertexbuffer_destroy(m_gfx_status.quads);
+	m_gfx_status = GfxStatus();
 }
 
 void MultiviewRenderer::check_canvas()
@@ -511,16 +681,21 @@ void MultiviewRenderer::shutdown()
 
 	m_placed.clear();
 	m_batch.reset();
+	m_status_cache.clear();
+	m_status_placed.clear();
+	m_status_batch.reset();
 
 	/* The draw callback is gone (class contract), so nothing else touches
 	 * m_gfx or m_safe now. gs_* objects are freed inside the graphics context. */
-	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_safe.ready()) {
+	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_gfx_status.atlas || m_gfx_status.quads || m_safe.ready()) {
 		obs_enter_graphics();
 		destroy_gfx_labels();
+		destroy_gfx_status();
 		m_safe.shutdown();
 		obs_leave_graphics();
 	}
 	m_gfx = GfxLabels();
+	m_gfx_status = GfxStatus();
 }
 
 void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
@@ -659,6 +834,13 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 			obs_render_main_texture();
 			endContent();
 			break;
+		case TileKind::OnAir:
+		case TileKind::Rec:
+		case TileKind::Clock:
+		case TileKind::Mixer:
+			/* Black until the status batch below covers it. */
+			paintAreaWithColor(ix, iy, iw, ih, backgroundColor);
+			break;
 		}
 	}
 
@@ -693,6 +875,23 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 			gs_draw(GS_TRIS, 0, m_gfx.text_vertices);
 		gs_enable_framebuffer_srgb(previous);
 
+		gs_load_vertexbuffer(nullptr);
+	}
+
+	/* Status tiles: one textured draw for all of them, the same path as the
+	 * label text (sRGB texture and framebuffer: opaque pixels round-trip). */
+	if (!snap->status) {
+		if (m_gfx_status.id)
+			destroy_gfx_status();
+	} else if (labels_ok && upload_status(*snap->status)) {
+		gs_load_indexbuffer(nullptr);
+		const bool previous = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(true);
+		gs_effect_set_texture_srgb(image, m_gfx_status.atlas);
+		gs_load_vertexbuffer(m_gfx_status.quads);
+		while (gs_effect_loop(def, "Draw"))
+			gs_draw(GS_TRIS, 0, m_gfx_status.vertices);
+		gs_enable_framebuffer_srgb(previous);
 		gs_load_vertexbuffer(nullptr);
 	}
 
