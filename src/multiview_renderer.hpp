@@ -6,6 +6,8 @@
 #include "label_metrics.hpp"
 #include "layout_model.hpp"
 #include "meter_scale.hpp"
+#include "mixer_columns.hpp"
+#include "mixer_feeds.hpp"
 #include "safe_areas.hpp"
 #include "status_format.hpp"
 #include "status_tiles.hpp"
@@ -75,7 +77,19 @@ class ObsState;
  * solid quads. The dB numbers are rasterized once with Qt (render_meter_scale)
  * and travel in the snapshot like the status atlas (one texture, one quad,
  * m_gfx_scale). While the meters are off nothing is attached to OBS audio and
- * render() only does one atomic load for them. */
+ * render() only does one atomic load for them.
+ *
+ * Mixer tile (status presets, meters on): one column per PGM and per OBS global
+ * audio device (MixerFeeds, UI thread: one volmeter per device, atomics only
+ * like the other meters; the PGM column reads the program levels the Program
+ * meter already takes). The bars are solid quads in the same effect loop as the
+ * other meters (ballistics per column, same maths), drawn after the status
+ * batch so they go over the tile's image. The names and dB values are
+ * rasterized with Qt into that image, only when a name, value, mute state or
+ * size changes; a dB value is refreshed at most twice a second and only for a
+ * change of 1 dB or more (db_text_update_due), from the peak-hold the graphics
+ * thread publishes in atomics (m_mixer_hold) and the 500 ms poll reads. Meters
+ * off: the dark "Mixer" placeholder, nothing attached. */
 class MultiviewRenderer : public QObject {
 public:
 	using SceneForSlot = std::function<std::string(int)>;
@@ -207,7 +221,23 @@ private:
 	struct MeterDisplay {
 		ChannelBallistics program[2];
 		ChannelBallistics preview[2];
+		ChannelBallistics mixer[kMixerMaxColumns][2];
+		uint64_t mixer_generation = 0; /* MixerDraw the mixer[] state belongs to */
 		uint64_t last_ns = 0; /* 0: first frame after the meters were turned on */
+	};
+
+	/* One column of the mixer tile as the graphics thread needs it. */
+	struct MixerDrawColumn {
+		std::shared_ptr<AudioMeter> feed; /* null: the program mix */
+		MixerColumnGeometry geometry;     /* canvas pixels */
+		bool muted = false;
+	};
+	/* The mixer tile's columns. Immutable once built. The feeds are detached by
+	 * the UI thread before it drops them (MixerFeeds); the graphics thread only
+	 * reads their atomics. */
+	struct MixerDraw {
+		uint64_t generation = 0; /* MixerFeeds::generation(): ballistics restart when it changes */
+		std::vector<MixerDrawColumn> columns;
 	};
 
 	struct RenderSnapshot {
@@ -219,6 +249,7 @@ private:
 		std::shared_ptr<const LabelBatch> labels; /* null: no labels */
 		std::shared_ptr<const StatusBatch> status; /* null: no status tiles */
 		std::shared_ptr<const MeterScaleBatch> meter_scale; /* null: meters off / no room */
+		std::shared_ptr<const MixerDraw> mixer; /* null: meters off / no mixer tile */
 		uint32_t canvas_cx = 0; /* canvas the labels were laid out for */
 		uint32_t canvas_cy = 0;
 
@@ -246,6 +277,11 @@ private:
 	void build_status(RenderSnapshot &snap);
 	std::shared_ptr<const StatusBatch> make_status_batch(const std::vector<PlacedStatus> &placed);
 	void build_meter_scale(RenderSnapshot &snap);
+	void build_mixer(RenderSnapshot &snap);
+	bool has_mixer_tile() const;
+	/* UI thread: the 500 ms poll (preview scene items, mixer devices / texts). */
+	void poll_audio();
+	void poll_mixer();
 	/* UI thread: (re)attaches the audio feeds to what is on air / in preview. */
 	void refresh_audio();
 	void poll_preview_audio();
@@ -293,6 +329,8 @@ private:
 		int w = 0;
 		int h = 0;
 		StatusSnapshot content;
+		bool mixer_on = false;               /* Mixer: drawn with columns */
+		std::vector<MixerColumnView> mixer;  /* Mixer: what the columns show */
 		std::shared_ptr<const StatusTileImage> image;
 	};
 	std::vector<StatusCacheEntry> m_status_cache;
@@ -304,7 +342,8 @@ private:
 	 * (atomics only) by the graphics thread; they live as long as the renderer. */
 	AudioMeter m_pgm_audio;
 	AudioMeter m_pvw_audio;
-	QTimer m_audio_timer; /* studio mode: preview scene items changed? */
+	QTimer m_audio_timer; /* 500 ms: preview scene items (studio mode), mixer devices (mixer tile) */
+	MixerFeeds m_mixer;   /* columns of the mixer tile (meters on + mixer tile) */
 	std::shared_ptr<const MeterScaleBatch> m_scale_batch;
 	std::vector<int> m_scale_key; /* what m_scale_batch was rasterized for */
 	uint64_t m_next_scale_id = 1;
@@ -313,6 +352,11 @@ private:
 	GfxLabels m_gfx;
 	GfxScale m_gfx_scale;
 	MeterDisplay m_meter;
+	/* Written by the graphics thread each frame (peak-hold of each mixer
+	 * column, larger channel), read by the UI poll; valid when the generation
+	 * equals the one of the columns being read. */
+	std::atomic<float> m_mixer_hold[kMixerMaxColumns];
+	std::atomic<uint64_t> m_mixer_hold_generation{0};
 	std::atomic<bool> m_meters_on{true};
 	GfxStatus m_gfx_status;
 	SafeAreas m_safe;

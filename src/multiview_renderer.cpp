@@ -116,11 +116,15 @@ MultiviewRenderer::MultiviewRenderer(ObsState &state) : m_state(state)
 	connect(&m_state, &ObsState::scenes_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::preview_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { refresh_audio(); });
-	/* Items added to / removed from / shown in the preview scene have no
-	 * cheap event: look again twice a second, in studio mode with meters on
-	 * only (the timer is stopped otherwise). */
+	/* Items added to / removed from / shown in the preview scene, and the
+	 * global audio devices of the mixer tile (added, removed, renamed, muted),
+	 * have no cheap event: look again twice a second. The timer runs only with
+	 * the meters on and either studio mode or a mixer tile (stopped otherwise). */
 	m_audio_timer.setInterval(500);
-	connect(&m_audio_timer, &QTimer::timeout, this, [this] { poll_preview_audio(); });
+	m_audio_timer.setTimerType(Qt::PreciseTimer); /* the dB text rule counts 500 ms */
+	connect(&m_audio_timer, &QTimer::timeout, this, [this] { poll_audio(); });
+	for (auto &h : m_mixer_hold)
+		h.store(kMeterFloorDb, std::memory_order_relaxed);
 
 	set_preset(Preset::Scenes8);
 	refresh_audio();
@@ -139,6 +143,7 @@ void MultiviewRenderer::set_preset(Preset preset)
 	m_tiles = build_layout(preset);
 	m_fillers = uncovered_areas(m_tiles);
 	refresh_scenes();
+	refresh_audio(); /* the mixer tile may have appeared or gone */
 }
 
 void MultiviewRenderer::set_scene_for_slot(SceneForSlot scene_for_slot)
@@ -231,6 +236,7 @@ void MultiviewRenderer::rebuild_snapshot()
 	build_labels(*snap);
 	build_status(*snap);
 	build_meter_scale(*snap);
+	build_mixer(*snap);
 	publish(std::move(snap));
 }
 
@@ -447,6 +453,12 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 	std::vector<PlacedStatus> placed;
 	std::vector<StatusCacheEntry> cache;
 
+	/* The mixer tile shows columns only while the meters are on. */
+	const bool mixer_on = m_meters_on.load(std::memory_order_relaxed) && !m_mixer.columns().empty();
+	std::vector<MixerColumnView> mixer_view;
+	if (mixer_on)
+		mixer_view = m_mixer.view();
+
 	if (m_canvas_cx > 0 && m_canvas_cy > 0) {
 		const float fw = float(m_canvas_cx);
 		const float fh = float(m_canvas_cy);
@@ -467,7 +479,8 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 			StatusCacheEntry entry;
 			for (const StatusCacheEntry &old : m_status_cache)
 				if (old.kind == t.kind && old.w == w && old.h == h && old.image &&
-				    status_tile_content_equal(t.kind, old.content, m_status)) {
+				    status_tile_content_equal(t.kind, old.content, m_status) &&
+				    (t.kind != TileKind::Mixer || (old.mixer_on == mixer_on && old.mixer == mixer_view))) {
 					entry = old;
 					break;
 				}
@@ -476,7 +489,11 @@ void MultiviewRenderer::build_status(RenderSnapshot &snap)
 				entry.w = w;
 				entry.h = h;
 				entry.content = m_status;
-				entry.image = render_status_tile(t.kind, m_status, w, h);
+				if (t.kind == TileKind::Mixer) {
+					entry.mixer_on = mixer_on;
+					entry.mixer = mixer_view;
+				}
+				entry.image = render_status_tile(t.kind, m_status, w, h, mixer_on ? &mixer_view : nullptr);
 			}
 			if (!entry.image)
 				continue;
@@ -591,7 +608,9 @@ void MultiviewRenderer::set_audio_meters(bool on)
 /* The program feed is the raw program mix and does not depend on the scene:
  * attached once while the meters are on. The preview feed is one volmeter per
  * audio source of the preview scene, in studio mode only (outside it the
- * Preview tile shows the program, so its meter mirrors the program levels). */
+ * Preview tile shows the program, so its meter mirrors the program levels).
+ * The mixer tile's feeds (one volmeter per global audio device) exist only
+ * while a mixer tile is in the layout. Meters off: nothing attached. */
 void MultiviewRenderer::refresh_audio()
 {
 	if (m_shut_down)
@@ -600,19 +619,62 @@ void MultiviewRenderer::refresh_audio()
 		m_audio_timer.stop();
 		m_pvw_audio.detach();
 		m_pgm_audio.detach();
+		m_mixer.clear();
 		return;
 	}
 	if (!m_pgm_audio.attached())
 		m_pgm_audio.attach_program_mix();
 
-	if (!m_state.studio_mode()) {
-		m_audio_timer.stop();
+	const bool studio = m_state.studio_mode();
+	const bool mixer = has_mixer_tile();
+	if (!studio)
 		m_pvw_audio.detach();
+	if (!mixer)
+		m_mixer.clear();
+	if (!studio && !mixer) {
+		m_audio_timer.stop();
 		return;
 	}
 	if (!m_audio_timer.isActive())
 		m_audio_timer.start();
+	poll_audio();
+}
+
+bool MultiviewRenderer::has_mixer_tile() const
+{
+	for (const Tile &t : m_tiles)
+		if (t.kind == TileKind::Mixer)
+			return true;
+	return false;
+}
+
+void MultiviewRenderer::poll_audio()
+{
 	poll_preview_audio();
+	poll_mixer();
+}
+
+/* The mixer tile's devices, names, mute states and dB texts. Rebuilds the
+ * snapshot only when something visible changed (a set change, a name, a mute,
+ * or a dB text that is due: 500 ms apart and 1 dB or more). */
+void MultiviewRenderer::poll_mixer()
+{
+	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !has_mixer_tile())
+		return;
+	const int64_t now_ms = int64_t(os_gettime_ns() / 1000000ull);
+	unsigned changed = m_mixer.refresh(now_ms);
+
+	/* The graphics thread publishes the levels per snapshot generation: trust
+	 * them only once it has drawn the columns we have now. */
+	const size_t n = std::min(m_mixer.columns().size(), kMixerMaxColumns);
+	if (n && m_mixer_hold_generation.load(std::memory_order_acquire) == m_mixer.generation()) {
+		float hold[kMixerMaxColumns];
+		for (size_t i = 0; i < n; ++i)
+			hold[i] = m_mixer_hold[i].load(std::memory_order_relaxed);
+		changed |= m_mixer.apply_levels(hold, n, now_ms);
+	}
+	if (changed)
+		rebuild_snapshot();
 }
 
 void MultiviewRenderer::poll_preview_audio()
@@ -684,6 +746,35 @@ void MultiviewRenderer::build_meter_scale(RenderSnapshot &snap)
 	}
 	m_scale_batch = nullptr;
 	m_scale_key.clear();
+}
+
+/* Where the mixer tile's bars go (canvas pixels), with the feeds to read. */
+void MultiviewRenderer::build_mixer(RenderSnapshot &snap)
+{
+	snap.mixer = nullptr;
+	if (!m_meters_on.load(std::memory_order_relaxed) || m_canvas_cx == 0 || m_canvas_cy == 0 ||
+	    m_mixer.columns().empty())
+		return;
+	const float fw = float(m_canvas_cx);
+	const float fh = float(m_canvas_cy);
+	for (const Tile &t : m_tiles) {
+		if (t.kind != TileKind::Mixer)
+			continue;
+		/* Same inner rect as render() paints and build_status rasterizes. */
+		const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+				     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+		const auto &cols = m_mixer.columns();
+		const std::vector<MixerColumnGeometry> geo = mixer_geometry(inner, cols.size());
+		if (geo.size() != std::min(cols.size(), kMixerMaxColumns))
+			return;
+		auto draw = std::make_shared<MixerDraw>();
+		draw->generation = m_mixer.generation();
+		draw->columns.reserve(geo.size());
+		for (size_t i = 0; i < geo.size(); ++i)
+			draw->columns.push_back({cols[i].feed, geo[i], cols[i].muted});
+		snap.mixer = std::move(draw);
+		return;
+	}
 }
 
 bool MultiviewRenderer::upload_scale(const MeterScaleBatch &batch)
@@ -820,6 +911,7 @@ void MultiviewRenderer::shutdown()
 	m_audio_timer.stop();
 	m_pvw_audio.detach();
 	m_pgm_audio.detach();
+	m_mixer.clear();
 	m_scale_batch.reset();
 	publish(nullptr);
 	release_showing();
@@ -1001,6 +1093,24 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 					   backgroundColor);
 	}
 
+	/* Status tiles: one textured draw for all of them, the same path as the
+	 * label text (sRGB texture and framebuffer: opaque pixels round-trip). */
+	if (!snap->status) {
+		if (m_gfx_status.id)
+			destroy_gfx_status();
+	} else if (labels_ok && upload_status(*snap->status)) {
+		gs_load_indexbuffer(nullptr);
+		const bool previous = gs_framebuffer_srgb_enabled();
+		gs_enable_framebuffer_srgb(true);
+		gs_effect_set_texture_srgb(image, m_gfx_status.atlas);
+		gs_load_vertexbuffer(m_gfx_status.quads);
+		while (gs_effect_loop(def, "Draw"))
+			gs_draw(GS_TRIS, 0, m_gfx_status.vertices);
+		gs_enable_framebuffer_srgb(previous);
+		gs_load_vertexbuffer(nullptr);
+	}
+
+	/* After the status tiles: the mixer tile's bars go over its (opaque) image. */
 	draw_meters(*snap, fw, fh, labels_ok);
 
 	/* Labels last (each sits inside its own tile, so the order does not change
@@ -1026,23 +1136,6 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 			gs_draw(GS_TRIS, 0, m_gfx.text_vertices);
 		gs_enable_framebuffer_srgb(previous);
 
-		gs_load_vertexbuffer(nullptr);
-	}
-
-	/* Status tiles: one textured draw for all of them, the same path as the
-	 * label text (sRGB texture and framebuffer: opaque pixels round-trip). */
-	if (!snap->status) {
-		if (m_gfx_status.id)
-			destroy_gfx_status();
-	} else if (labels_ok && upload_status(*snap->status)) {
-		gs_load_indexbuffer(nullptr);
-		const bool previous = gs_framebuffer_srgb_enabled();
-		gs_enable_framebuffer_srgb(true);
-		gs_effect_set_texture_srgb(image, m_gfx_status.atlas);
-		gs_load_vertexbuffer(m_gfx_status.quads);
-		while (gs_effect_loop(def, "Draw"))
-			gs_draw(GS_TRIS, 0, m_gfx_status.vertices);
-		gs_enable_framebuffer_srgb(previous);
 		gs_load_vertexbuffer(nullptr);
 	}
 
@@ -1077,6 +1170,33 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 		ballistics_step(m_meter.preview[c], pvw[size_t(c)], dt);
 	}
 
+	/* Mixer columns: the program column shares the program levels taken above
+	 * (take_peaks has one consumer); a device column reads its own feed. A muted
+	 * column is empty. The peak-hold of each column goes to the UI poll (dB
+	 * text) through atomics. */
+	const MixerDraw *mixer = snap.mixer.get();
+	if (mixer) {
+		if (mixer->generation != m_meter.mixer_generation) {
+			for (auto &col : m_meter.mixer)
+				col[0] = col[1] = ChannelBallistics();
+			m_meter.mixer_generation = mixer->generation;
+		}
+		const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
+		for (size_t i = 0; i < n; ++i) {
+			const MixerDrawColumn &col = mixer->columns[i];
+			std::array<float, 2> in = col.feed ? col.feed->take_peaks() : pgm;
+			if (col.muted) {
+				m_meter.mixer[i][0] = m_meter.mixer[i][1] = ChannelBallistics();
+			} else {
+				ballistics_step(m_meter.mixer[i][0], in[0], dt);
+				ballistics_step(m_meter.mixer[i][1], in[1], dt);
+			}
+			m_mixer_hold[i].store(std::max(m_meter.mixer[i][0].hold_db, m_meter.mixer[i][1].hold_db),
+					      std::memory_order_relaxed);
+		}
+		m_mixer_hold_generation.store(mixer->generation, std::memory_order_release);
+	}
+
 	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
 	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
 
@@ -1105,23 +1225,27 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 		     meter_color(s.zone, fg));
 	};
 
+	/* One bar: the dark bands of the empty scale, the bright bands up to the
+	 * level, the peak-hold tick. */
+	auto draw_bar = [&](const RectF &bar, const ChannelBallistics &st) {
+		MeterSegment seg[3];
+		int n = meter_segments(1.0f, seg);
+		for (int i = 0; i < n; ++i)
+			run(bar, seg[i], false);
+		n = meter_segments(db_to_fraction(st.peak_db), seg);
+		for (int i = 0; i < n; ++i)
+			run(bar, seg[i], true);
+		if (st.hold_db > kMeterMinDb) {
+			const float th = std::max(1.0f, bar.h * 0.005f);
+			const float y = std::min(bar.y + bar.h * (1.0f - db_to_fraction(st.hold_db)), bar.y + bar.h - th);
+			fill(bar.x, y, bar.x + bar.w, y + th, peak_hold_color(st.hold_db));
+		}
+	};
+
 	auto draw_meter = [&](const MeterGeometry &g, const ChannelBallistics (&st)[2]) {
 		fill(g.column.x, g.column.y, g.column.x + g.column.w, g.column.y + g.column.h, 0x99000000);
-		MeterSegment seg[3];
-		for (int c = 0; c < 2; ++c) {
-			const RectF &bar = g.bar[c];
-			int n = meter_segments(1.0f, seg);
-			for (int i = 0; i < n; ++i)
-				run(bar, seg[i], false);
-			n = meter_segments(db_to_fraction(st[c].peak_db), seg);
-			for (int i = 0; i < n; ++i)
-				run(bar, seg[i], true);
-			if (st[c].hold_db > kMeterMinDb) {
-				const float th = std::max(1.0f, bar.h * 0.005f);
-				const float y = std::min(meter_y_for_db(g, st[c].hold_db), bar.y + bar.h - th);
-				fill(bar.x, y, bar.x + bar.w, y + th, peak_hold_color(st[c].hold_db));
-			}
-		}
+		for (int c = 0; c < 2; ++c)
+			draw_bar(g.bar[c], st[c]);
 	};
 
 	bool scale_drawn = false;
@@ -1138,6 +1262,14 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 				scale_drawn = true;
 			} else {
 				draw_meter(meter_geometry(inner, false), m_meter.preview);
+			}
+		}
+		/* Mixer tile: its bars (labels_ok: the geometry is for this canvas). */
+		if (mixer && labels_ok) {
+			const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
+			for (size_t i = 0; i < n; ++i) {
+				draw_bar(mixer->columns[i].geometry.bar[0], m_meter.mixer[i][0]);
+				draw_bar(mixer->columns[i].geometry.bar[1], m_meter.mixer[i][1]);
 			}
 		}
 	}

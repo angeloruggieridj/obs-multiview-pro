@@ -2,6 +2,7 @@
 #pragma once
 
 #include "layout_model.hpp"
+#include "mixer_columns.hpp"
 #include "status_format.hpp"
 
 #include <cstdint>
@@ -23,5 +24,11 @@ struct StatusTileImage {
  *
  * UI thread only. Not a widget: the multiview window is itself the native
  * display surface, so the tiles are drawn inside the obs_display from the
- * images this produces. nullptr for a non-status kind or an empty size. */
-std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h);
+ * images this produces. nullptr for a non-status kind or an empty size.
+ *
+ * Mixer: `mixer` null (audio meters off) draws the dark placeholder. Else a
+ * black tile with, per column, its name above and its value below the place
+ * where the renderer draws the two bars (mixer_geometry on the tile's own
+ * pixel size; the names are elided to the column width). */
+std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h,
+							  const std::vector<MixerColumnView> *mixer = nullptr);

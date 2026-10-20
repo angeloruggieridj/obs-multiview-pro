@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "status_tiles.hpp"
 
+#include "audio_meter_math.hpp"
+
 #include <QColor>
 #include <QFont>
 #include <QFontMetrics>
@@ -11,6 +13,7 @@
 #include <QtGlobal>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace {
@@ -112,14 +115,81 @@ void draw_clock(const Painter &d, const StatusSnapshot &s)
 	d.text(QString::fromStdString(s.clock), 0.03, 0.97, 0.26, 0.82, 0.27, kWhite);
 }
 
-void draw_mixer(const Painter &d)
+void draw_mixer_placeholder(const Painter &d)
 {
 	d.text(QStringLiteral("Mixer"), 0.04, 0.96, 0.30, 0.70, 0.14, kCaption, false);
 }
 
+QColor value_color(MixerValueStyle style)
+{
+	auto from_argb = [](uint32_t c) { return QColor(int((c >> 16) & 0xFF), int((c >> 8) & 0xFF), int(c & 0xFF)); };
+	switch (style) {
+	case MixerValueStyle::Nominal:
+		return from_argb(meter_color(MeterZone::Nominal, true));
+	case MixerValueStyle::Warning:
+		return from_argb(meter_color(MeterZone::Warning, true));
+	case MixerValueStyle::Error:
+		return from_argb(meter_color(MeterZone::Error, true));
+	case MixerValueStyle::Mute:
+		return kRed;
+	case MixerValueStyle::Dim:
+		break;
+	}
+	return QColor(0x80, 0x80, 0x80);
+}
+
+/* Names above and values below each column, in the rows of mixer_geometry
+ * (computed here for the image's own size: the layout is proportional, so it
+ * matches the bars drawn in canvas pixels). Font sizes: 80% of the row, the
+ * name shortened to what fits (elide_name), the value shrunk to fit. */
+void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &cols)
+{
+	const std::vector<MixerColumnGeometry> geo = mixer_geometry({0.f, 0.f, float(w), float(h)}, cols.size());
+	for (size_t i = 0; i < geo.size(); ++i) {
+		const MixerColumnGeometry &g = geo[i];
+		const MixerColumnView &col = cols[i];
+
+		auto draw = [&](const RectF &r, const QString &text, const QColor &color, bool bold, bool elide) {
+			if (text.isEmpty())
+				return;
+			int px = int(r.h * 0.8f);
+			QFont f = make_font(bold);
+			const QRect rect(int(std::lround(r.x)), int(std::lround(r.y)), std::max(1, int(std::lround(r.w))),
+					 std::max(1, int(std::lround(r.h))));
+			QString shown = text;
+			if (elide) {
+				/* Shrink the name down to 55% of the row to keep more of it, then cut. */
+				const std::string full = text.toStdString();
+				const int min_px = std::max(6, int(r.h * 0.55f));
+				while (px > min_px && elide_name(full, max_name_chars(r.w, float(px))) != full)
+					--px;
+				const size_t n = max_name_chars(r.w, float(px));
+				shown = QString::fromStdString(elide_name(full, n));
+				f.setPixelSize(std::max(1, px));
+				shown = QFontMetrics(f).elidedText(shown, Qt::ElideRight, rect.width()); /* exact guard */
+			} else {
+				for (; px > 6; --px) {
+					f.setPixelSize(px);
+					if (QFontMetrics(f).horizontalAdvance(shown) <= rect.width())
+						break;
+				}
+				f.setPixelSize(std::max(1, px));
+			}
+			if (px < 6 || shown.isEmpty())
+				return;
+			p.setFont(f);
+			p.setPen(color);
+			p.drawText(rect, Qt::AlignCenter, shown);
+		};
+		draw(g.name, QString::fromStdString(col.name), QColor(0xE6, 0xE6, 0xE6), false, true);
+		draw(g.value, QString::fromStdString(col.value), value_color(col.style), true, false);
+	}
+}
+
 } // namespace
 
-std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h)
+std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const StatusSnapshot &snapshot, int w, int h,
+							  const std::vector<MixerColumnView> *mixer)
 {
 	if (w <= 0 || h <= 0)
 		return nullptr;
@@ -135,6 +205,8 @@ std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const S
 		bg = kBlack;
 		break;
 	case TileKind::Mixer:
+		if (mixer)
+			bg = kBlack;
 		break;
 	default:
 		return nullptr;
@@ -158,7 +230,10 @@ std::shared_ptr<const StatusTileImage> render_status_tile(TileKind kind, const S
 			draw_clock(d, snapshot);
 			break;
 		default:
-			draw_mixer(d);
+			if (mixer)
+				draw_mixer(p, w, h, *mixer);
+			else
+				draw_mixer_placeholder(d);
 			break;
 		}
 	}

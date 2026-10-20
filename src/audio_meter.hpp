@@ -64,6 +64,8 @@ public:
 	/* True when the attached sources are exactly `sources` (pointer identity;
 	 * the references held here keep those addresses unique). */
 	bool has_sources(const std::vector<obs_source_t *> &sources) const;
+	/* True when `source` is the only attached source (pointer identity). */
+	bool has_source(const obs_source_t *source) const { return m_entries.size() == 1 && m_entries[0]->source == source; }
 
 	/* Re-reads, for each attached source, whether it is mono (then the R bar
 	 * mirrors L) and whether it is muted (then it reads silence: the volmeter

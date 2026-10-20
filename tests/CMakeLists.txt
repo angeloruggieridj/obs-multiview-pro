@@ -8,6 +8,7 @@ add_executable(
   safe_area_geometry_test.cpp
   status_format_test.cpp
   audio_meter_test.cpp
+  mixer_columns_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
@@ -15,6 +16,7 @@ add_executable(
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/safe_area_geometry.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/status_format.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/audio_meter_math.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/mixer_columns.cpp
 )
 target_include_directories(
   unit_tests

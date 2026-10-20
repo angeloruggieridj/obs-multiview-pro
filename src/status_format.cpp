@@ -119,7 +119,7 @@ bool status_tile_content_equal(TileKind kind, const StatusSnapshot &a, const Sta
 		       a.record_size == b.record_size;
 	case TileKind::Clock:
 		return a.clock == b.clock;
-	case TileKind::Mixer: /* placeholder until the meters (Task 9b) */
+	case TileKind::Mixer: /* its content is the mixer columns, not the status text */
 	default:
 		return true;
 	}
