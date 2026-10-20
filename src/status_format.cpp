@@ -170,6 +170,18 @@ double bitrate_kbps(uint64_t previous_bytes, uint64_t current_bytes, double seco
 	return double(current_bytes - previous_bytes) * 8.0 / 1000.0 / seconds;
 }
 
+int64_t seconds_from_frames(int64_t frames, uint32_t fps_num, uint32_t fps_den)
+{
+	if (frames < 0 || fps_num == 0 || fps_den == 0)
+		return -1;
+	return static_cast<int64_t>(static_cast<double>(frames) * fps_den / fps_num);
+}
+
+void OutputClock::start_at_elapsed(int64_t now_ms, int64_t elapsed_seconds)
+{
+	start(now_ms - std::max<int64_t>(0, elapsed_seconds) * 1000);
+}
+
 void OutputClock::start(int64_t now_ms)
 {
 	m_active = true;

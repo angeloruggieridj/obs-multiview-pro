@@ -315,3 +315,33 @@ TEST_CASE("status_tile_content_equal_looks_only_at_the_fields_a_tile_shows")
 
 	CHECK(status_tile_content_equal(TileKind::Scene, a, size)); /* not a status tile */
 }
+
+TEST_CASE("status_seconds_from_frames")
+{
+	CHECK(seconds_from_frames(0, 60, 1) == 0);
+	CHECK(seconds_from_frames(3600, 60, 1) == 60);
+	CHECK(seconds_from_frames(119, 60, 1) == 1); /* floor */
+	CHECK(seconds_from_frames(30000, 30000, 1001) == 1001); /* 29.97 fps */
+	CHECK(seconds_from_frames(100, 60, 0) == -1);  /* fps_den == 0 */
+	CHECK(seconds_from_frames(100, 0, 1) == -1);   /* fps_num == 0 */
+	CHECK(seconds_from_frames(-5, 60, 1) == -1);   /* negative frames */
+}
+
+TEST_CASE("status_output_clock_seeded_from_elapsed")
+{
+	OutputClock c;
+	c.start_at_elapsed(10000, 90); /* already running for 90 s when first seen */
+	CHECK(c.active());
+	CHECK(c.seconds(10000) == 90);
+	CHECK(c.seconds(13000) == 93);
+	c.pause(13000);
+	CHECK(c.seconds(20000) == 93);
+	c.resume(20000);
+	CHECK(c.seconds(21000) == 94);
+
+	OutputClock d;
+	d.start_at_elapsed(5000, -3); /* unknown / negative: starts at 0 */
+	CHECK(d.seconds(5000) == 0);
+	d.start_at_elapsed(5000, 0);
+	CHECK(d.seconds(7000) == 2);
+}

@@ -145,6 +145,22 @@ ObsState::StreamStats ObsState::stream_stats() const
 	return st;
 }
 
+ObsState::RecordStats ObsState::record_stats() const
+{
+	RecordStats st;
+	if (!m_active)
+		return st;
+	/* Counted reference (may be null): always released. */
+	obs_output_t *out = obs_frontend_get_recording_output();
+	if (!out)
+		return st;
+	st.have = true;
+	st.total_bytes = obs_output_get_total_bytes(out);
+	st.total_frames = obs_output_get_total_frames(out);
+	obs_output_release(out);
+	return st;
+}
+
 ObsState::ServiceInfo ObsState::streaming_service() const
 {
 	ServiceInfo info;

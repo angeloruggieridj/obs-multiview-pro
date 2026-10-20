@@ -15,12 +15,17 @@
  * text changed. Enabled only while the layout shows status tiles.
  *
  * Durations: libobs has no output start time, so they are measured here with a
- * steady clock, started when the frontend STARTED event arrives (so they match
- * OBS's own timer to within the event latency, but are not read from it). When
- * the window opens while an output is already live, the clock starts at the
- * first sample that sees it: the duration then counts from the window's
- * opening, not from the real start. Stopped events reset them. A paused
- * recording does not count its paused time.
+ * steady clock, started when the frontend STARTED event arrives. When the
+ * window opens (or the status preset is chosen) while an output is already
+ * running, the clock is seeded from the output's frame counter divided by the
+ * video fps (obs_output_get_total_frames: elapsed time, without paused time
+ * for a recording), so it matches OBS's own timer to about a second. Stopped
+ * events reset them. A paused recording does not count its paused time.
+ *
+ * Recording: size is the recording output's total_bytes (no file system
+ * access, nothing that can block the UI thread); the file name is read once
+ * per recording (32.1 has no file-changed event, so a split file keeps the
+ * first name).
  *
  * Bitrate: delta of the stream output's total_bytes between two samples; the
  * first sample of each stream shows "--".
@@ -56,6 +61,7 @@ private:
 	OutputClock m_stream;
 	OutputClock m_record;
 
+	std::string m_record_file; /* name of the current recording, cached */
 	bool m_service_known = false; /* destination read for the current stream */
 	std::string m_service;
 	std::string m_server_url;

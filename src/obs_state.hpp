@@ -58,6 +58,15 @@ public:
 	};
 	StreamStats stream_stats() const;
 
+	/* Counters of the recording output (counted ref released before
+	 * returning); `have` false when there is none. */
+	struct RecordStats {
+		bool have = false;
+		uint64_t total_bytes = 0;
+		int64_t total_frames = 0;
+	};
+	RecordStats record_stats() const;
+
 	/* Display name of the stream destination: the service name from its
 	 * settings ("YouTube - RTMPS", empty for custom servers) and the server
 	 * URL (never the stream key). Empty strings when unknown. */

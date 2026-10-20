@@ -90,6 +90,11 @@ StatusSnapshot make_snapshot(const RawStatus &raw);
  * computed (counter went backwards, no time elapsed). */
 double bitrate_kbps(uint64_t previous_bytes, uint64_t current_bytes, double seconds);
 
+/* Elapsed time of an output from its frame counter: floor(frames * fps_den /
+ * fps_num) seconds; -1 when it cannot be computed (fps_num or fps_den 0,
+ * negative frames). */
+int64_t seconds_from_frames(int64_t frames, uint32_t fps_num, uint32_t fps_den);
+
 /* Elapsed time of an output, from timestamps the caller supplies (ms, any
  * monotonic origin). Time spent paused is not counted. */
 class OutputClock {
@@ -97,6 +102,9 @@ public:
 	bool active() const { return m_active; }
 	bool paused() const { return m_paused; }
 	void start(int64_t now_ms);
+	/* Starts a clock for an output that was already running `elapsed_seconds`
+	 * ago (negative counts as 0). */
+	void start_at_elapsed(int64_t now_ms, int64_t elapsed_seconds);
 	void stop();
 	void pause(int64_t now_ms);
 	void resume(int64_t now_ms);

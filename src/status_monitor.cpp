@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "status_monitor.hpp"
 
-#include <QTime>
+#include <obs.h>
 
-#include <filesystem>
-#include <system_error>
+#include <QTime>
 
 StatusMonitor::StatusMonitor(ObsState &state, QObject *parent) : QObject(parent), m_state(state), m_timer(this)
 {
@@ -27,11 +26,13 @@ StatusMonitor::StatusMonitor(ObsState &state, QObject *parent) : QObject(parent)
 	});
 	connect(&m_state, &ObsState::recording_started, this, [this] {
 		m_record.start(now_ms());
+		m_record_file.clear(); /* read again below: a new file */
 		if (m_enabled)
 			sample();
 	});
 	connect(&m_state, &ObsState::recording_stopped, this, [this] {
 		m_record.stop();
+		m_record_file.clear();
 		if (m_enabled)
 			sample();
 	});
@@ -85,13 +86,24 @@ void StatusMonitor::sync_clocks(int64_t now)
 	const bool recording = m_state.recording_active();
 	const bool paused = m_state.recording_paused();
 
+	/* An output that is already running when first seen (window opened
+	 * mid-live): seed the clock from its frame counter / video fps. */
+	uint32_t fps_num = 0, fps_den = 0;
+	if ((streaming && !m_stream.active()) || (recording && !m_record.active())) {
+		obs_video_info ovi;
+		if (obs_get_video_info(&ovi)) {
+			fps_num = ovi.fps_num;
+			fps_den = ovi.fps_den;
+		}
+	}
+
 	if (streaming && !m_stream.active())
-		m_stream.start(now);
+		m_stream.start_at_elapsed(now, seconds_from_frames(m_state.stream_stats().total_frames, fps_num, fps_den));
 	else if (!streaming && m_stream.active())
 		m_stream.stop();
 
 	if (recording && !m_record.active())
-		m_record.start(now);
+		m_record.start_at_elapsed(now, seconds_from_frames(m_state.record_stats().total_frames, fps_num, fps_den));
 	else if (!recording && m_record.active())
 		m_record.stop();
 
@@ -145,13 +157,15 @@ void StatusMonitor::sample()
 	}
 
 	if (raw.recording) {
-		/* One stat() per second of the file OBS is writing. */
-		raw.record_path = m_state.last_recording_path();
-		if (!raw.record_path.empty()) {
-			std::error_code ec;
-			const auto size = std::filesystem::file_size(std::filesystem::u8path(raw.record_path), ec);
-			raw.record_bytes = ec ? -1 : static_cast<int64_t>(size);
-		}
+		/* The file name is read once per recording (no polling of OBS's
+		 * lastRecordingPath); the size is the output's byte counter. No
+		 * file system access here: a stalled network share cannot block. */
+		if (m_record_file.empty())
+			m_record_file = m_state.last_recording_path();
+		raw.record_path = m_record_file;
+		const ObsState::RecordStats rs = m_state.record_stats();
+		if (rs.have)
+			raw.record_bytes = static_cast<int64_t>(rs.total_bytes);
 	}
 
 	const StatusSnapshot snap = make_snapshot(raw);
