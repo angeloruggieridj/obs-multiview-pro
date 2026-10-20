@@ -89,7 +89,7 @@ Scenes with *Show in Multiview* off are skipped, like the native one.
 
 **Updates.** The *Updates* tab shows the installed version and the result of the last check: *Check for updates now* asks GitHub at once; *Check for updates automatically* (on by default) does it once a day, 60 seconds after OBS has finished loading at the earliest and never while streaming or recording. When a newer version exists, the tab shows the change log of every newer release, *Open download page* opens its release page in your browser and *Skip this version* stops the reminder until a newer one comes out. An automatic check never opens a window: it writes one line in the OBS log, and the window menu gets an *Update available* entry (the Tools menu entry becomes *Multiview Settings... (update available)*). *Include pre-releases* also reports beta and release-candidate versions.
 
-**Privacy.** A check is one HTTPS GET to `api.github.com` (the public list of this project's releases). It sends nothing but the request itself and `User-Agent: obs-multiview-pro/<version>`: no cookies, no account, no system details. To turn the automatic check off: *Settings → Updates*, clear *Check for updates automatically*, then OK.
+**Privacy.** A check is one HTTPS GET to `api.github.com` (the public list of this project's releases), made with the libcurl that comes with OBS, with certificate verification on. It sends nothing but the request itself and `User-Agent: obs-multiview-pro/<version>`: no cookies, no account, no system details. To turn the automatic check off: *Settings → Updates*, clear *Check for updates automatically*, then OK.
 
 ### Status and limits
 
@@ -100,7 +100,6 @@ Alpha. Tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds run o
 - OBS has no cache indicator like hardware switchers: the connection state comes from the output congestion.
 - If the window opens while streaming or recording, durations are derived from the output frame counter.
 - No NDI state tile.
-- The OBS 32 build for Windows ships Qt without its TLS plugin, so on Windows the update check currently ends with *Secure connections are not available in this OBS installation* (nothing is sent). Check the Releases page by hand meanwhile.
 
 ### Build from source
 
@@ -110,7 +109,7 @@ cmake --build --preset windows-x64
 ctest --test-dir build_x64 -C RelWithDebInfo
 ```
 
-CMake downloads OBS, its dependencies and Qt on Windows and macOS. On Ubuntu install `libobs-dev`, `qt6-base-dev` and `qt6-base-private-dev` first. See [docs/ci-notes.md](docs/ci-notes.md) and [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
+CMake downloads OBS, its dependencies and Qt on Windows and macOS. On Ubuntu install `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` and `libcurl4-openssl-dev` first. See [docs/ci-notes.md](docs/ci-notes.md) and [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
 
 ### License
 
@@ -184,7 +183,7 @@ Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo
 
 **Aggiornamenti.** La scheda *Updates* mostra la versione installata e l'esito dell'ultima verifica: *Check for updates now* interroga subito GitHub; *Check for updates automatically* (attiva di default) lo fa una volta al giorno, non prima di 60 secondi dalla fine del caricamento di OBS e mai durante una diretta o una registrazione. Se esiste una versione più recente, la scheda mostra il change log di tutte le release più nuove, *Open download page* apre la pagina della release nel browser e *Skip this version* sospende l'avviso finché non esce una versione ancora più nuova. Una verifica automatica non apre mai finestre: scrive una riga nel log di OBS e il menu della finestra mostra la voce *Update available* (la voce del menu Strumenti diventa *Multiview Settings... (update available)*). *Include pre-releases* segnala anche le versioni beta e release candidate.
 
-**Privacy.** Una verifica è una sola richiesta HTTPS GET ad `api.github.com` (l'elenco pubblico delle release del progetto). Invia soltanto la richiesta e `User-Agent: obs-multiview-pro/<versione>`: nessun cookie, nessun account, nessun dato del sistema. Per disattivare la verifica automatica: *Settings → Updates*, togli la spunta a *Check for updates automatically*, poi OK.
+**Privacy.** Una verifica è una sola richiesta HTTPS GET ad `api.github.com` (l'elenco pubblico delle release del progetto), fatta con la libcurl inclusa in OBS e con la verifica dei certificati attiva. Invia soltanto la richiesta e `User-Agent: obs-multiview-pro/<versione>`: nessun cookie, nessun account, nessun dato del sistema. Per disattivare la verifica automatica: *Settings → Updates*, togli la spunta a *Check for updates automatically*, poi OK.
 
 ### Stato e limiti
 
@@ -195,7 +194,6 @@ Alpha. Provato solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux g
 - OBS non ha un indicatore di cache come gli switcher hardware: lo stato della connessione deriva dalla congestione dell'uscita.
 - Se la finestra si apre durante una diretta o una registrazione, le durate si ricavano dal contatore di frame dell'uscita.
 - Nessun riquadro con lo stato NDI.
-- La build di OBS 32 per Windows include Qt senza il suo plugin TLS, quindi su Windows la verifica degli aggiornamenti per ora termina con *Secure connections are not available in this OBS installation* (non viene inviato nulla). Nel frattempo controlla a mano la pagina Releases.
 
 ### Compilare dai sorgenti
 
@@ -205,7 +203,7 @@ cmake --build --preset windows-x64
 ctest --test-dir build_x64 -C RelWithDebInfo
 ```
 
-Su Windows e macOS CMake scarica OBS, le dipendenze e Qt. Su Ubuntu installa prima `libobs-dev`, `qt6-base-dev` e `qt6-base-private-dev`. Vedi [docs/ci-notes.md](docs/ci-notes.md) e [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
+Su Windows e macOS CMake scarica OBS, le dipendenze e Qt. Su Ubuntu installa prima `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` e `libcurl4-openssl-dev`. Vedi [docs/ci-notes.md](docs/ci-notes.md) e [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
 
 ### Licenza
 

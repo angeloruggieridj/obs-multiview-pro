@@ -114,6 +114,7 @@ jobs:
 
       # Same packages as obs-plugintemplate's Ubuntu setup: libobs and the
       # frontend API come from the OBS Studio PPA, Qt6 from Ubuntu itself.
+      # libcurl (update check) is the one OBS itself depends on (libcurl4).
       - name: Install build dependencies
         run: |
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
@@ -121,7 +122,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config ccache \
             libgles2-mesa-dev libsimde-dev obs-studio \
-            qt6-base-dev libqt6svg6-dev qt6-base-private-dev
+            qt6-base-dev libqt6svg6-dev qt6-base-private-dev \
+            libcurl4-openssl-dev
 
       - name: Configure
         run: cmake --preset ubuntu-ci-x86_64
