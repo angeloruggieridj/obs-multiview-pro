@@ -99,6 +99,12 @@ TEST_CASE("layout_scenes8_matches_native_horizontal_top_8")
 			CHECK(t.rect.w == doctest::Approx(0.5f));
 			CHECK(t.rect.h == doctest::Approx(0.5f));
 			break;
+		case TileKind::OnAir:
+		case TileKind::Rec:
+		case TileKind::Clock:
+		case TileKind::Mixer:
+			FAIL_CHECK("status tile in a scenes-only preset");
+			break;
 		case TileKind::Scene: {
 			const int i = t.scene_slot;
 			CHECK(t.rect.x == doctest::Approx((i % 4) * 0.25f));
@@ -130,6 +136,12 @@ TEST_CASE("layout_scenes24_matches_native_horizontal_top_24")
 			CHECK(t.rect.y == doctest::Approx(0.f));
 			CHECK(t.rect.w == doctest::Approx(third));
 			CHECK(t.rect.h == doctest::Approx(third));
+			break;
+		case TileKind::OnAir:
+		case TileKind::Rec:
+		case TileKind::Clock:
+		case TileKind::Mixer:
+			FAIL_CHECK("status tile in a scenes-only preset");
 			break;
 		case TileKind::Scene: {
 			const int i = t.scene_slot;
