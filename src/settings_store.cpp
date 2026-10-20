@@ -7,6 +7,7 @@
 #include <util/platform.h>
 
 #include <cstdio>
+#include <utility>
 
 static SettingsStore *g_store = nullptr; /* UI thread only */
 

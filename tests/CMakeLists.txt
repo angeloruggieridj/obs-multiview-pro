@@ -20,10 +20,9 @@ add_executable(
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/mixer_columns.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/settings.cpp
 )
-target_include_directories(
-  unit_tests
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest ${CMAKE_CURRENT_SOURCE_DIR}/../src
-)
+# doctest is third-party: SYSTEM keeps its headers out of the -Werror warning set.
+target_include_directories(unit_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest)
+target_include_directories(unit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_compile_features(unit_tests PRIVATE cxx_std_17)
 add_test(NAME unit_tests COMMAND unit_tests)
 add_test(NAME layout_tests COMMAND unit_tests -tc=layout_*)

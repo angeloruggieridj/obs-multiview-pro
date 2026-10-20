@@ -7,6 +7,7 @@
 #include <QObject>
 
 #include <algorithm>
+#include <utility>
 #include <vector>
 
 #include "multiview_window.hpp"

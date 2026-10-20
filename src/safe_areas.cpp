@@ -2,6 +2,8 @@
 #include "safe_areas.hpp"
 #include "safe_area_geometry.hpp"
 
+#include <cstdint>
+
 namespace {
 /* Native OUTLINE_COLOR (display-helpers.hpp). */
 constexpr uint32_t kOutlineColor = 0xFFD0D0D0;
