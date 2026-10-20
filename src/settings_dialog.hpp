@@ -6,6 +6,7 @@
 #include <QDialog>
 #include <QTimer>
 
+class QKeyEvent;
 class QLineEdit;
 class QPushButton;
 class QSlider;
@@ -32,6 +33,9 @@ public:
 	void reload();
 
 	void reject() override;
+
+protected:
+	void keyPressEvent(QKeyEvent *event) override;
 
 private:
 	QWidget *build_appearance_page();

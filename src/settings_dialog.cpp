@@ -15,6 +15,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPainter>
@@ -256,6 +257,20 @@ void SettingsDialog::update_buttons()
 {
 	if (QPushButton *apply_button = m_buttons ? m_buttons->button(QDialogButtonBox::Apply) : nullptr)
 		apply_button->setEnabled(m_current != m_saved);
+}
+
+/* Enter in a field only finishes that edit: it must not press OK (the button
+ * box would make OK the default button). On a button it works as usual. */
+void SettingsDialog::keyPressEvent(QKeyEvent *event)
+{
+	if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) &&
+	    !qobject_cast<QAbstractButton *>(focusWidget())) {
+		if (focusWidget() == m_hex)
+			show_values(m_current);
+		event->accept();
+		return;
+	}
+	QDialog::keyPressEvent(event);
 }
 
 void SettingsDialog::reject()
