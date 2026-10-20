@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -127,11 +128,6 @@ size_t utf8_cut(const std::string &s, size_t limit)
 	return n;
 }
 
-std::string display_version(const std::string &tag)
-{
-	return !tag.empty() && tag[0] == 'v' ? tag.substr(1) : tag;
-}
-
 bool starts_with(const std::string &s, const char *prefix)
 {
 	const std::string p(prefix);
@@ -200,6 +196,11 @@ bool parse_version(const std::string &text, SemVersion &out)
 	v.pre = std::move(pre);
 	out = std::move(v);
 	return true;
+}
+
+std::string version_for_display(const std::string &tag)
+{
+	return !tag.empty() && tag[0] == 'v' ? tag.substr(1) : tag;
 }
 
 int compare_versions(const SemVersion &a, const SemVersion &b)
@@ -375,7 +376,7 @@ std::string update_status_text(const UpdateState &state, const std::string &skip
 	case UpdateStatus::UpToDate:
 		return "You have the latest version.";
 	case UpdateStatus::UpdateAvailable:
-		return "Version " + display_version(state.latest) + " is available" +
+		return "Version " + version_for_display(state.latest) + " is available" +
 		       (!skipped.empty() && skipped == state.latest ? " (skipped)." : ".");
 	case UpdateStatus::NoReleases:
 		return "No release has been published yet.";

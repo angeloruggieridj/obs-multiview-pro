@@ -101,6 +101,14 @@ TEST_CASE("state_update_version_rejects_garbage")
 	CHECK(v.major == 7);
 }
 
+TEST_CASE("state_update_version_for_display")
+{
+	CHECK(version_for_display("v1.2.0") == "1.2.0");
+	CHECK(version_for_display("1.2.0") == "1.2.0");
+	CHECK(version_for_display("") == "");
+	CHECK(version_for_display("v") == "");
+}
+
 TEST_CASE("state_update_version_precedence")
 {
 	CHECK(cmp("1.0.0", "1.0.0") == 0);

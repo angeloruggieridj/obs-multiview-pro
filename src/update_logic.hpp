@@ -35,6 +35,9 @@ constexpr uint32_t kMaxVersionNumber = 999999999;
  * kMaxVersionNumber. False (and `out` untouched) for anything else. */
 bool parse_version(const std::string &text, SemVersion &out);
 
+/* "v1.2.0" -> "1.2.0" for messages; anything else unchanged. */
+std::string version_for_display(const std::string &tag);
+
 /* Negative, 0 or positive like strcmp, by semver precedence:
  * 1.0.0-alpha < 1.0.0-alpha.1 < 1.0.0-beta < 1.0.0-rc.1 < 1.0.0. */
 int compare_versions(const SemVersion &a, const SemVersion &b);

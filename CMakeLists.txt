@@ -22,8 +22,8 @@ if(ENABLE_FRONTEND_API)
 endif()
 
 if(ENABLE_QT)
-  find_package(Qt6 COMPONENTS Widgets Core Gui REQUIRED)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+  find_package(Qt6 COMPONENTS Widgets Core Gui Network REQUIRED)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
   target_compile_options(
     ${CMAKE_PROJECT_NAME}
     PRIVATE $<$<C_COMPILER_ID:Clang,AppleClang>:-Wno-quoted-include-in-framework-header -Wno-comma>
@@ -48,7 +48,8 @@ target_sources(
     src/mixer_columns.cpp src/mixer_columns.hpp src/mixer_feeds.cpp src/mixer_feeds.hpp
     src/settings.cpp src/settings.hpp src/settings_store.cpp src/settings_store.hpp
     src/appearance.cpp src/appearance.hpp src/settings_dialog.cpp src/settings_dialog.hpp
-    src/update_logic.cpp src/update_logic.hpp
+    src/update_logic.cpp src/update_logic.hpp src/update_checker.cpp src/update_checker.hpp
+    src/update_manager.cpp src/update_manager.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 
