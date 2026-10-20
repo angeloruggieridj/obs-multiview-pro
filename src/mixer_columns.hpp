@@ -19,14 +19,23 @@ constexpr int kMixerPgm = 0;            /* column id of the program mix */
 
 /* Which columns the tile shows, as ids: 0 = PGM, n = OBS output channel n
  * (1-based). `present[i]` says whether output channel i + 1 holds a source.
- * PGM comes first, then the present channels in channel order, at most
- * `max_columns` in all (the first channels win). max_columns 0 -> empty. */
+ * The present channels come in channel order, then PGM last (rightmost), at
+ * most `max_columns` in all (PGM is never dropped, the first channels win).
+ * max_columns 0 -> empty. */
 std::vector<int> select_mixer_columns(const std::vector<bool> &present, size_t max_columns = kMixerMaxColumns);
 
 /* `utf8` shortened to `max_chars` code points: unchanged when it fits, else
  * its first max_chars - 1 code points (trailing spaces dropped) followed by
  * U+2026. max_chars 0 -> "". Never cuts inside a UTF-8 sequence. */
 std::string elide_name(const std::string &utf8, size_t max_chars);
+
+/* Like elide_name, but the ellipsis (U+2026) goes in the middle so that names
+ * that differ at the end stay distinguishable: "Desktop Audio" and "Desktop
+ * Audio 2" at 4 characters read "De<ell>o" and "De<ell>2". The first
+ * ceil((max_chars - 1) / 2) and the last floor((max_chars - 1) / 2) code points
+ * are kept (spaces next to the ellipsis dropped). Unchanged when it fits;
+ * max_chars 0 -> "". Never cuts inside a UTF-8 sequence. */
+std::string elide_name_middle(const std::string &utf8, size_t max_chars);
 
 /* How many characters of a name fit a column `cell_w` wide at `font_px`
  * (average advance taken as 0.55 em). 0 for a non-positive / NaN input. */
@@ -55,12 +64,13 @@ struct DbTextState {
 };
 
 constexpr int64_t kMixerTextMinIntervalMs = 500; /* at most 2 refreshes a second */
-constexpr int kMixerTextMinStepDb = 1;           /* of the rounded value */
+constexpr float kMixerTextMinStepDb = 1.0f;      /* of the real level difference */
 
 /* True when the dB text must be made again for `new_db` at `now_ms`: nothing
  * shown yet, or at least kMixerTextMinIntervalMs since the last one AND the
- * level, rounded to whole dB (silence = kMeterFloorDb), differs from the shown
- * one by at least kMixerTextMinStepDb. A clock that went backwards is never
+ * level (sanitized, silence = kMeterFloorDb) differs from the shown one by at
+ * least kMixerTextMinStepDb, or one of the two is silence ("--") and the other
+ * is not. A clock that went backwards is never
  * due. */
 bool db_text_update_due(const DbTextState &state, float new_db, int64_t now_ms);
 

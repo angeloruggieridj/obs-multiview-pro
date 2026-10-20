@@ -20,12 +20,12 @@ TEST_CASE("mixer_select_columns_pgm_only_without_devices")
 	CHECK(select_mixer_columns({}) == std::vector<int>{0});
 }
 
-TEST_CASE("mixer_select_columns_pgm_first_then_channel_order")
+TEST_CASE("mixer_select_columns_channel_order_then_pgm_last")
 {
 	/* Desktop Audio (1) and Mic/Aux (3), a gap at 2 */
-	CHECK(select_mixer_columns({true, false, true, false, false, false}) == std::vector<int>{0, 1, 3});
-	CHECK(select_mixer_columns({false, false, false, false, false, true}) == std::vector<int>{0, 6});
-	CHECK(select_mixer_columns({true, true, true, true, true, true}) == std::vector<int>{0, 1, 2, 3, 4, 5, 6});
+	CHECK(select_mixer_columns({true, false, true, false, false, false}) == std::vector<int>{1, 3, 0});
+	CHECK(select_mixer_columns({false, false, false, false, false, true}) == std::vector<int>{6, 0});
+	CHECK(select_mixer_columns({true, true, true, true, true, true}) == std::vector<int>{1, 2, 3, 4, 5, 6, 0});
 }
 
 TEST_CASE("mixer_select_columns_capped")
@@ -33,9 +33,9 @@ TEST_CASE("mixer_select_columns_capped")
 	const std::vector<bool> ten(10, true);
 	const std::vector<int> cols = select_mixer_columns(ten);
 	REQUIRE(cols.size() == kMixerMaxColumns);
-	CHECK(cols.front() == 0); /* PGM never dropped */
-	CHECK(cols.back() == 7);  /* the first channels win */
-	CHECK(select_mixer_columns(ten, 3) == std::vector<int>{0, 1, 2});
+	CHECK(cols.back() == 0);  /* PGM never dropped, always last */
+	CHECK(cols[cols.size() - 2] == 7); /* the first channels win */
+	CHECK(select_mixer_columns(ten, 3) == std::vector<int>{1, 2, 0});
 	CHECK(select_mixer_columns(ten, 1) == std::vector<int>{0});
 	CHECK(select_mixer_columns(ten, 0).empty());
 }
@@ -50,6 +50,33 @@ TEST_CASE("mixer_elide_name")
 	CHECK(elide_name("abc", 1) == kEllipsis);
 	CHECK(elide_name("abc", 0).empty());
 	CHECK(elide_name("", 4).empty());
+}
+
+TEST_CASE("mixer_elide_name_middle")
+{
+	CHECK(elide_name_middle("Mic", 8) == "Mic");
+	CHECK(elide_name_middle("Mic/Aux", 7) == "Mic/Aux");
+	CHECK(elide_name_middle("Desktop Audio", 4) == "De" + kEllipsis + "o");
+	CHECK(elide_name_middle("Desktop Audio 2", 4) == "De" + kEllipsis + "2");
+	CHECK(elide_name_middle("Desktop Audio", 4) != elide_name_middle("Desktop Audio 2", 4));
+	CHECK(elide_name_middle("Desktop Audio", 8) == "Desk" + kEllipsis + "dio");
+	CHECK(elide_name_middle("Mic/Aux 2", 3) == "M" + kEllipsis + "2");
+	CHECK(elide_name_middle("abcd\xC3", 4) == "ab" + kEllipsis + "\xC3");
+	CHECK(elide_name_middle("abc", 1) == kEllipsis);
+	CHECK(elide_name_middle("abc", 0).empty());
+	CHECK(elide_name_middle("", 4).empty());
+	/* spaces next to the ellipsis are dropped */
+	CHECK(elide_name_middle("ab cd ef", 6) == "ab" + kEllipsis + "ef");
+	CHECK(elide_name_middle("ab  cd", 4) == "ab" + kEllipsis + "d");
+}
+
+TEST_CASE("mixer_elide_name_middle_counts_code_points")
+{
+	const std::string name = "\xC3\xA9t\xC3\xA9 long \xC3\xA9t\xC3\xA9"; /* accented "ete long ete" */
+	const std::string cut = elide_name_middle(name, 5);
+	CHECK(cut == "\xC3\xA9t" + kEllipsis + "t\xC3\xA9");
+	/* never cuts inside a sequence, even for a truncated tail */
+	CHECK(elide_name_middle("abcd\xC3", 4) == "ab" + kEllipsis + "\xC3");
 }
 
 TEST_CASE("mixer_elide_name_counts_code_points_not_bytes")
@@ -124,8 +151,12 @@ TEST_CASE("mixer_db_text_update_rule")
 	CHECK(db_text_update_due(s, -19.f, 1500));
 	CHECK(db_text_update_due(s, -21.f, 1500));
 	CHECK(db_text_update_due(s, -6.f, 9999));
-	/* >= 1 dB on the rounded values: -20 -> -19 */
+	/* >= 1 dB on the real difference: -20 -> -19 */
 	CHECK(db_text_update_due(s, -18.6f, 2000));
+	/* rounded values differ by 1 (-21 / -20) but the real difference is 0.91 */
+	const DbTextState r = {true, -20.51f, 0};
+	CHECK_FALSE(db_text_update_due(r, -19.6f, 5000));
+	CHECK(db_text_update_due(r, -19.5f, 5000));
 	/* a clock that went backwards never makes it due */
 	CHECK_FALSE(db_text_update_due(s, -6.f, 400));
 }
@@ -139,6 +170,11 @@ TEST_CASE("mixer_db_text_update_rule_silence")
 	CHECK(db_text_update_due(s, -20.f, 600));
 	CHECK_FALSE(db_text_update_due(s, -kInf, 600));
 	CHECK_FALSE(db_text_update_due(s, -90.4f, 600));
+	/* "--" <-> a value, however small the difference */
+	s = {true, -89.8f, 0};
+	CHECK(db_text_update_due(s, -kInf, 600));
+	s = {true, kMeterFloorDb, 0};
+	CHECK(db_text_update_due(s, -89.8f, 600));
 }
 
 TEST_CASE("mixer_geometry_columns")

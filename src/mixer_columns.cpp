@@ -10,10 +10,10 @@ std::vector<int> select_mixer_columns(const std::vector<bool> &present, size_t m
 	std::vector<int> out;
 	if (max_columns == 0)
 		return out;
-	out.push_back(kMixerPgm);
-	for (size_t i = 0; i < present.size() && out.size() < max_columns; ++i)
+	for (size_t i = 0; i < present.size() && out.size() + 1 < max_columns; ++i)
 		if (present[i])
 			out.push_back(int(i) + 1);
+	out.push_back(kMixerPgm); /* last: rightmost */
 	return out;
 }
 
@@ -65,6 +65,36 @@ std::string elide_name(const std::string &utf8, size_t max_chars)
 	return head + "\xE2\x80\xA6";
 }
 
+std::string elide_name_middle(const std::string &utf8, size_t max_chars)
+{
+	if (max_chars == 0)
+		return std::string();
+	if (code_point_count(utf8, max_chars + 1) <= max_chars)
+		return utf8;
+	const size_t keep = max_chars - 1; /* code points besides the ellipsis */
+	const size_t head_n = keep - keep / 2;
+	const size_t tail_n = keep / 2;
+
+	std::string head = utf8.substr(0, offset_after(utf8, head_n));
+	while (!head.empty() && head.back() == ' ')
+		head.pop_back();
+
+	/* Start of the last tail_n code points: walk back over lead bytes. */
+	size_t tail_pos = utf8.size();
+	for (size_t i = 0; i < tail_n && tail_pos > 0; ++i) {
+		--tail_pos;
+		while (tail_pos > 0 && (static_cast<unsigned char>(utf8[tail_pos]) & 0xC0) == 0x80)
+			--tail_pos;
+	}
+	tail_pos = std::max(tail_pos, offset_after(utf8, head_n)); /* never overlap the head */
+	std::string tail = utf8.substr(tail_pos);
+	size_t lead = 0;
+	while (lead < tail.size() && tail[lead] == ' ')
+		++lead;
+	tail.erase(0, lead);
+	return head + "\xE2\x80\xA6" + tail;
+}
+
 size_t max_name_chars(float cell_w, float font_px)
 {
 	if (!(cell_w > 0.f) || !(font_px > 0.f))
@@ -104,9 +134,11 @@ bool db_text_update_due(const DbTextState &state, float new_db, int64_t now_ms)
 		return true;
 	if (now_ms - state.at_ms < kMixerTextMinIntervalMs)
 		return false;
-	const long shown = std::lround(sanitize_db(state.db));
-	const long now = std::lround(sanitize_db(new_db));
-	return std::labs(now - shown) >= kMixerTextMinStepDb;
+	const float shown = sanitize_db(state.db);
+	const float now = sanitize_db(new_db);
+	if ((shown <= kMeterFloorDb) != (now <= kMeterFloorDb))
+		return true; /* "--" <-> a value */
+	return std::fabs(now - shown) >= kMixerTextMinStepDb;
 }
 
 std::vector<MixerColumnGeometry> mixer_geometry(const RectF &inner, size_t n)

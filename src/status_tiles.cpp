@@ -158,15 +158,16 @@ void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &c
 					 std::max(1, int(std::lround(r.h))));
 			QString shown = text;
 			if (elide) {
-				/* Shrink the name down to 55% of the row to keep more of it, then cut. */
+				/* Shrink the name down to 45% of the row to keep more of it, then cut
+				 * in the middle so names that differ at the end stay apart. */
 				const std::string full = text.toStdString();
-				const int min_px = std::max(6, int(r.h * 0.55f));
-				while (px > min_px && elide_name(full, max_name_chars(r.w, float(px))) != full)
+				const int min_px = std::max(6, int(r.h * 0.45f));
+				while (px > min_px && elide_name_middle(full, max_name_chars(r.w, float(px))) != full)
 					--px;
 				const size_t n = max_name_chars(r.w, float(px));
-				shown = QString::fromStdString(elide_name(full, n));
+				shown = QString::fromStdString(elide_name_middle(full, n));
 				f.setPixelSize(std::max(1, px));
-				shown = QFontMetrics(f).elidedText(shown, Qt::ElideRight, rect.width()); /* exact guard */
+				shown = QFontMetrics(f).elidedText(shown, Qt::ElideMiddle, rect.width()); /* exact guard */
 			} else {
 				for (; px > 6; --px) {
 					f.setPixelSize(px);

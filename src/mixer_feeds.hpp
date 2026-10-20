@@ -12,8 +12,8 @@
 
 /* The columns of the mixer tile and what feeds them (UI thread only).
  *
- * Column 0 is PGM (the program mix: the renderer's own AudioMeter, so `feed`
- * is null here). The others are the OBS global audio devices, i.e. the sources
+ * The last column is PGM (the program mix: the renderer's own AudioMeter, so
+ * `feed` is null there). The others, in channel order, are the OBS global audio devices, i.e. the sources
  * set on output channels 1..6 (Desktop Audio, Mic/Aux ...): each has an
  * AudioMeter with exactly one volmeter on it, which holds a counted reference
  * of the source (the same discipline as the preview feed of the Task 9). At
