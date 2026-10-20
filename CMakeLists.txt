@@ -48,6 +48,7 @@ target_sources(
     src/mixer_columns.cpp src/mixer_columns.hpp src/mixer_feeds.cpp src/mixer_feeds.hpp
     src/settings.cpp src/settings.hpp src/settings_store.cpp src/settings_store.hpp
     src/appearance.cpp src/appearance.hpp src/settings_dialog.cpp src/settings_dialog.hpp
+    src/update_logic.cpp src/update_logic.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 

@@ -11,6 +11,7 @@ add_executable(
   mixer_columns_test.cpp
   settings_test.cpp
   appearance_test.cpp
+  update_logic_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
@@ -21,6 +22,7 @@ add_executable(
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/mixer_columns.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/settings.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/appearance.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/update_logic.cpp
 )
 # doctest is third-party: SYSTEM keeps its headers out of the -Werror warning set.
 target_include_directories(unit_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest)
