@@ -4,6 +4,7 @@
 #include "multiview_renderer.hpp"
 #include "obs_state.hpp"
 #include "preset_picker.hpp"
+#include "settings_dialog.hpp"
 #include "settings_store.hpp"
 #include "status_monitor.hpp"
 
@@ -80,7 +81,12 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 		&MultiviewWindow::on_scene_collection_changing);
 	connect(m_state.get(), &ObsState::scene_collection_changed, this,
 		&MultiviewWindow::on_scene_collection_changed);
-	m_renderer = std::make_unique<MultiviewRenderer>(*m_state);
+	/* Appearance (global): read now, then followed live. */
+	m_renderer = std::make_unique<MultiviewRenderer>(*m_state, SettingsStore::instance().appearance());
+	connect(&SettingsStore::instance(), &SettingsStore::appearance_changed, this, [this](const Appearance &a) {
+		if (m_renderer)
+			m_renderer->set_appearance(a);
+	});
 	/* Saved options first (the slot count depends on the preset), then the
 	 * saved assignment of the current scene collection. Nothing is written
 	 * until the user changes something. */
@@ -648,6 +654,9 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 			}
 		});
 	}
+	menu->addSeparator();
+	QAction *settings = menu->addAction(tr("Settings..."));
+	connect(settings, &QAction::triggered, this, [] { open_settings_dialog(); });
 	menu->popup(global_pos);
 	event->accept();
 }

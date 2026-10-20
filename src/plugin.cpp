@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "multiview_window.hpp"
+#include "settings_dialog.hpp"
 #include "settings_store.hpp"
 
 OBS_DECLARE_MODULE()
@@ -20,6 +21,8 @@ OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
  * frontend events and unload all run there). */
 static QPointer<QAction> g_action;
 static QMetaObject::Connection g_connection;
+static QPointer<QAction> g_settings_action;
+static QMetaObject::Connection g_settings_connection;
 static std::vector<QPointer<MultiviewWindow>> g_windows;
 
 static void close_all_windows()
@@ -62,8 +65,10 @@ static void open_multiview_window()
 
 static void frontend_event(enum obs_frontend_event event, void *)
 {
-	if (event == OBS_FRONTEND_EVENT_EXIT)
+	if (event == OBS_FRONTEND_EVENT_EXIT) {
+		close_settings_dialog(); /* takes any preview back before the windows go */
 		close_all_windows();
+	}
 }
 
 void register_menu_action()
@@ -76,6 +81,15 @@ void register_menu_action()
 	g_action = action;
 	g_connection = QObject::connect(action, &QAction::triggered, action, [] { open_multiview_window(); });
 	obs_log(LOG_INFO, "menu action 'Tools > Multiview' registered");
+
+	auto *settings = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction("Multiview Settings..."));
+	if (!settings) {
+		obs_log(LOG_ERROR, "could not create the 'Tools > Multiview Settings...' menu action");
+		return;
+	}
+	g_settings_action = settings;
+	g_settings_connection =
+		QObject::connect(settings, &QAction::triggered, settings, [] { open_settings_dialog(); });
 }
 
 bool obs_module_load(void)
@@ -94,6 +108,10 @@ void obs_module_unload(void)
 	QObject::disconnect(g_connection);
 	g_connection = QMetaObject::Connection();
 	g_action.clear();
+	QObject::disconnect(g_settings_connection);
+	g_settings_connection = QMetaObject::Connection();
+	g_settings_action.clear();
+	close_settings_dialog();
 	close_all_windows();
 	SettingsStore::shutdown(); /* after the windows: their final saves are flushed */
 	obs_log(LOG_INFO, "plugin unloaded");
