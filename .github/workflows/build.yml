@@ -1,12 +1,17 @@
 name: Build
 
-# Phase 1: compile + unit tests on the three platforms, upload the built plugin.
-# No signing, no notarization, no installers, no release/publish, no secrets.
+# Compile + unit tests on the three platforms, upload the built plugin.
+# No signing, no notarization, no installers, no secrets. Also called by
+# release.yml (workflow_call) for version tags: tag pushes do not start this
+# workflow on their own, so a release builds once.
 
 on:
   push:
+    branches:
+      - "**"
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read

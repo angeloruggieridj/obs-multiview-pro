@@ -1,0 +1,123 @@
+name: Release
+
+# Runs when a version tag (v1.2.3, v1.2.3-rc.1) is pushed: checks the tag
+# against buildspec.json and CHANGELOG.md, builds and tests the three
+# platforms exactly like build.yml (it is called as a reusable workflow), then
+# publishes a GitHub release with the zipped plugin for each platform and
+# SHA256SUMS.txt. Only the final job may write to the repository.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check tag, version and change log
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Tag matches buildspec.json
+        id: version
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          spec="$(jq -r '.version' buildspec.json)"
+          if [ "$version" != "$spec" ]; then
+            echo "::error::Tag $tag does not match buildspec.json version $spec (expected tag v$spec)."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: CHANGELOG.md has a section for this version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bash .github/scripts/changelog-section.sh "$version" CHANGELOG.md > /dev/null
+
+  build:
+    name: Build
+    needs: check
+    uses: ./.github/workflows/build.yml
+
+  release:
+    name: Publish release
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Show downloaded files
+        run: find artifacts -type f -exec ls -l {} \;
+
+      # Layouts: unzip the Windows and Linux archives into the OBS plugins
+      # folder (obs-multiview-pro/bin/64bit/...); the macOS archive holds the
+      # .plugin bundle, zipped with ditto by build.yml.
+      - name: Build release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist stage/windows/obs-multiview-pro/bin/64bit stage/ubuntu/obs-multiview-pro/bin/64bit
+
+          win=artifacts/obs-multiview-pro-windows-x64
+          test -f "$win/obs-multiview-pro.dll" || { echo "::error::Windows artifact has no obs-multiview-pro.dll"; exit 1; }
+          cp "$win/obs-multiview-pro.dll" stage/windows/obs-multiview-pro/bin/64bit/
+          if [ -f "$win/obs-multiview-pro.pdb" ]; then
+            cp "$win/obs-multiview-pro.pdb" stage/windows/obs-multiview-pro/bin/64bit/
+          fi
+          (cd stage/windows && zip -r -X "../../dist/obs-multiview-pro-$VERSION-windows-x64.zip" obs-multiview-pro)
+
+          mac=artifacts/obs-multiview-pro-macos-universal/obs-multiview-pro.plugin.zip
+          test -f "$mac" || { echo "::error::macOS artifact has no obs-multiview-pro.plugin.zip"; exit 1; }
+          cp "$mac" "dist/obs-multiview-pro-$VERSION-macos-universal.zip"
+
+          lin=artifacts/obs-multiview-pro-ubuntu-24.04-x86_64/obs-multiview-pro.so
+          test -f "$lin" || { echo "::error::Ubuntu artifact has no obs-multiview-pro.so"; exit 1; }
+          cp "$lin" stage/ubuntu/obs-multiview-pro/bin/64bit/
+          (cd stage/ubuntu && zip -r -X "../../dist/obs-multiview-pro-$VERSION-ubuntu-24.04-x86_64.zip" obs-multiview-pro)
+
+          (cd dist && sha256sum *.zip > SHA256SUMS.txt)
+          ls -l dist
+          cat dist/SHA256SUMS.txt
+          for z in dist/*.zip; do echo "== $z"; unzip -l "$z"; done
+
+      - name: Release notes from CHANGELOG.md
+        run: bash .github/scripts/changelog-section.sh "$VERSION" CHANGELOG.md > release-notes.md
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          case "$VERSION" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --title "Multiview Pro for OBS $VERSION" \
+            --notes-file release-notes.md \
+            "${prerelease[@]}" \
+            dist/*.zip dist/SHA256SUMS.txt
