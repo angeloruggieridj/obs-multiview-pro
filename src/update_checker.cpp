@@ -25,7 +25,8 @@ namespace {
 
 constexpr const char *kApiUrl = "https://api.github.com/repos/angeloruggieridj/obs-multiview-pro/releases?per_page=10";
 constexpr qint64 kMaxResponseBytes = 1024 * 1024;
-constexpr int kTransferTimeoutMs = 10000; /* no data for this long: aborted by Qt */
+constexpr int kIdleTimeoutMs = 10000;     /* no data for this long: aborted */
+constexpr int kTransferTimeoutMs = 12000; /* the same in Qt, as a backstop */
 constexpr int kOverallTimeoutMs = 15000;  /* a server that trickles data */
 constexpr int kMaxRedirects = 3;
 constexpr int kMaxReleases = 30;
@@ -107,14 +108,18 @@ QString request_url()
 
 UpdateChecker::UpdateChecker(QObject *parent) : QObject(parent)
 {
-	m_deadline.setSingleShot(true);
-	m_deadline.setInterval(kOverallTimeoutMs);
-	connect(&m_deadline, &QTimer::timeout, this, [this] {
+	auto time_out = [this] {
 		if (m_reply) {
 			m_abort_reason = AbortReason::Timeout;
 			m_reply->abort(); /* finished() follows synchronously */
 		}
-	});
+	};
+	m_deadline.setSingleShot(true);
+	m_deadline.setInterval(kOverallTimeoutMs);
+	connect(&m_deadline, &QTimer::timeout, this, time_out);
+	m_idle.setSingleShot(true);
+	m_idle.setInterval(kIdleTimeoutMs);
+	connect(&m_idle, &QTimer::timeout, this, time_out);
 }
 
 UpdateChecker::~UpdateChecker()
@@ -154,6 +159,8 @@ bool UpdateChecker::start(Callback done)
 	req.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("obs-multiview-pro/%1").arg(QString::fromUtf8(PLUGIN_VERSION)));
 	req.setRawHeader("Accept", "application/vnd.github+json");
 	req.setRawHeader("X-GitHub-Api-Version", "2022-11-28");
+	/* Fixed, so that Qt does not send the system language. */
+	req.setRawHeader("Accept-Language", "en");
 	req.setTransferTimeout(kTransferTimeoutMs);
 	req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::UserVerifiedRedirectPolicy);
 	req.setMaximumRedirectsAllowed(kMaxRedirects);
@@ -177,6 +184,7 @@ bool UpdateChecker::start(Callback done)
 		}
 	});
 	connect(reply, &QNetworkReply::metaDataChanged, this, [this, reply] {
+		m_idle.start();
 		const QVariant len = reply->header(QNetworkRequest::ContentLengthHeader);
 		if (len.isValid() && len.toLongLong() > kMaxResponseBytes) {
 			m_abort_reason = AbortReason::TooLarge;
@@ -186,6 +194,7 @@ bool UpdateChecker::start(Callback done)
 	connect(reply, &QNetworkReply::readyRead, this, [this, reply] {
 		if (m_abort_reason != AbortReason::None)
 			return;
+		m_idle.start();
 		m_body += reply->read(kMaxResponseBytes + 1 - m_body.size());
 		if (m_body.size() > kMaxResponseBytes) {
 			m_abort_reason = AbortReason::TooLarge;
@@ -194,12 +203,14 @@ bool UpdateChecker::start(Callback done)
 	});
 	connect(reply, &QNetworkReply::finished, this, [this] { on_finished(); });
 	m_deadline.start();
+	m_idle.start();
 	return true;
 }
 
 void UpdateChecker::cancel()
 {
 	m_deadline.stop();
+	m_idle.stop();
 	m_pending_error = false;
 	m_done = nullptr;
 	if (QNetworkReply *reply = m_reply) {
@@ -239,6 +250,7 @@ void UpdateChecker::on_finished()
 		return;
 	m_reply = nullptr;
 	m_deadline.stop();
+	m_idle.stop();
 	disconnect(reply, nullptr, this, nullptr);
 	reply->deleteLater();
 

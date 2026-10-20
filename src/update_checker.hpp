@@ -28,7 +28,8 @@ struct FetchResult {
 
 /* One HTTPS GET of
  *   https://api.github.com/repos/angeloruggieridj/obs-multiview-pro/releases?per_page=10
- * with only the headers GitHub asks for (Accept, X-GitHub-Api-Version) and
+ * with only the headers GitHub asks for (Accept, X-GitHub-Api-Version), a
+ * fixed "Accept-Language: en" (Qt would send the system language) and
  * User-Agent "obs-multiview-pro/<version>": no cookies, no credentials, no
  * cache, nothing else about the machine.
  *
@@ -75,4 +76,5 @@ private:
 	AbortReason m_abort_reason = AbortReason::None;
 	bool m_pending_error = false; /* an error is being reported without a request */
 	QTimer m_deadline;            /* overall time limit */
+	QTimer m_idle;                /* no data for this long */
 };
