@@ -1,0 +1,11 @@
+name: Feature request
+description: An idea for the multiview
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to see?
+      description: Say what you are trying to do in the control room, not only the feature.
+    validations:
+      required: true

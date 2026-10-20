@@ -1,0 +1,34 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: input
+    id: obs
+    attributes:
+      label: OBS Studio version
+      placeholder: "32.2.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux (X11), Linux (Wayland)]
+    validations:
+      required: true
+  - type: input
+    id: preset
+    attributes:
+      label: Preset in use
+      placeholder: "Scenes only 8 / With status 24 ..."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: OBS log
+      description: Help → Log Files → Upload Current Log File, paste the link.
