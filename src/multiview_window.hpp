@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 class ObsState;
 class MultiviewRenderer;
@@ -46,6 +47,8 @@ protected:
 	void mouseMoveEvent(QMouseEvent *event) override;
 	void mouseReleaseEvent(QMouseEvent *event) override;
 	void mouseDoubleClickEvent(QMouseEvent *event) override;
+	void focusOutEvent(QFocusEvent *event) override;
+	void hideEvent(QHideEvent *event) override;
 
 private:
 	static void draw_callback(void *param, uint32_t cx, uint32_t cy);
@@ -65,6 +68,8 @@ private:
 	 * click on a label. */
 	void add_scene_choices(QMenu *menu, int slot);
 	void show_scene_menu(int slot, const QPoint &global_pos);
+	/* Forgets a press / drag in progress and restores the cursor. */
+	void cancel_press();
 	void update_label_scale();
 	void sync_scene_names();
 	void on_scenes_changed();
@@ -103,6 +108,7 @@ private:
 	bool m_press_active = false;
 	bool m_dragging = false;
 	int m_press_slot = -1;
+	std::string m_press_scene; /* the scene in m_press_slot at the press */
 	QPoint m_press_pos;
 	/* Left press on a scene label: opens the scene menu on release. */
 	int m_label_press_slot = -1;

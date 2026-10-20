@@ -244,6 +244,12 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 {
 	m_label_hits.clear();
 	std::vector<PlacedLabel> placed;
+	struct PendingHit {
+		int slot;
+		RectF box;
+		size_t index; /* in `placed` */
+	};
+	std::vector<PendingHit> pending_hits;
 
 	/* Publishes `placed` (reusing the current batch when nothing changed). */
 	auto finish = [&] {
@@ -253,6 +259,10 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 			m_placed = std::move(placed);
 		}
 		snap.labels = m_batch;
+		/* Hit boxes only for the labels that are really drawn. */
+		for (const PendingHit &h : pending_hits)
+			if (m_batch && h.index < m_batch->placed_fits.size() && m_batch->placed_fits[h.index])
+				m_label_hits.emplace_back(h.slot, h.box);
 	};
 
 	obs_video_info ovi;
@@ -321,9 +331,10 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		if (!img)
 			continue;
 		const LabelGeometry g = label_geometry(r, img->size, scale);
+		const size_t placed_index = placed.size();
 		placed.push_back({std::move(img), g.box.x, g.box.y, scale});
 		if (t.kind == TileKind::Scene)
-			m_label_hits.emplace_back(t.scene_slot, g.box);
+			pending_hits.push_back({t.scene_slot, g.box, placed_index});
 	}
 	finish();
 }
@@ -383,7 +394,9 @@ MultiviewRenderer::make_batch(const std::vector<PlacedLabel> &placed)
 		out.push_back(v[2]);
 	};
 
+	batch->placed_fits.reserve(placed.size());
 	for (size_t i = 0; i < placed.size(); ++i) {
+		batch->placed_fits.push_back(spots[i].fits ? 1 : 0);
 		if (!spots[i].fits)
 			continue;
 		const PlacedLabel &p = placed[i];
@@ -819,6 +832,11 @@ void MultiviewRenderer::set_display_size(int cx, int cy)
 
 int MultiviewRenderer::label_slot_at(float canvas_x, float canvas_y) const
 {
+	/* The boxes are in the canvas coordinates they were built for: while the
+	 * canvas has changed and the rebuild has not happened yet, they are stale. */
+	obs_video_info ovi;
+	if (!obs_get_video_info(&ovi) || ovi.base_width != m_canvas_cx || ovi.base_height != m_canvas_cy)
+		return -1;
 	for (const auto &hit : m_label_hits) {
 		const RectF &b = hit.second;
 		if (canvas_x >= b.x && canvas_x < b.x + b.w && canvas_y >= b.y && canvas_y < b.y + b.h)

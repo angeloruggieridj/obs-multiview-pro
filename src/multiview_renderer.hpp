@@ -162,6 +162,9 @@ private:
 		std::vector<vec3> box_points;   /* GS_TRIS, canvas coordinates */
 		std::vector<vec3> text_points;  /* GS_TRIS, canvas coordinates */
 		std::vector<vec2> text_uvs;     /* atlas coordinates of text_points */
+		/* Per placed label, in order: it got room in the atlas (a label
+		 * that did not is not drawn, so it gets no hit box either). */
+		std::vector<uint8_t> placed_fits;
 	};
 
 	/* GPU objects of the batch drawn last (graphics thread only). */

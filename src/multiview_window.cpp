@@ -18,6 +18,8 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QEvent>
+#include <QFocusEvent>
+#include <QHideEvent>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPlatformSurfaceEvent>
@@ -494,6 +496,7 @@ void MultiviewWindow::mousePressEvent(QMouseEvent *event)
 		m_dragging = false;
 		m_press_pos = event->pos();
 		m_press_slot = scene_slot_at(event->pos());
+		m_press_scene = m_press_slot >= 0 ? m_assignment.scene_for_slot(m_press_slot) : std::string();
 		event->accept();
 		return;
 	}
@@ -540,8 +543,9 @@ void MultiviewWindow::mouseReleaseEvent(QMouseEvent *event)
 
 	const int target = scene_slot_at(event->pos());
 	if (was_dragging) {
-		/* Dropped outside any scene tile: cancelled. */
-		if (target >= 0 && target != press_slot) {
+		/* Dropped outside any scene tile: cancelled. So is a drop of a tile
+		 * whose scene changed since the press (a rename, a removal). */
+		if (target >= 0 && target != press_slot && m_assignment.scene_for_slot(press_slot) == m_press_scene) {
 			m_assignment.swap(press_slot, target);
 			assignment_changed();
 		}
@@ -576,8 +580,30 @@ void MultiviewWindow::mouseDoubleClickEvent(QMouseEvent *event)
 	event->accept();
 }
 
+void MultiviewWindow::cancel_press()
+{
+	m_press_active = false;
+	m_dragging = false;
+	m_press_slot = -1;
+	m_label_press_slot = -1;
+	unsetCursor();
+}
+
+void MultiviewWindow::focusOutEvent(QFocusEvent *event)
+{
+	cancel_press();
+	QWidget::focusOutEvent(event);
+}
+
+void MultiviewWindow::hideEvent(QHideEvent *event)
+{
+	cancel_press();
+	QWidget::hideEvent(event);
+}
+
 void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 {
+	cancel_press();
 	sync_scene_names();
 	auto *menu = new QMenu(this);
 	menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -661,6 +687,7 @@ void MultiviewWindow::show_scene_menu(int slot, const QPoint &global_pos)
 {
 	if (slot < 0 || !m_state)
 		return;
+	cancel_press();
 	auto *menu = new QMenu(this);
 	menu->setAttribute(Qt::WA_DeleteOnClose);
 	add_scene_choices(menu, slot);
