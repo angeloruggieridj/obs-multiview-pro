@@ -3,16 +3,12 @@
 
 #include "update_logic.hpp"
 
-#include <QByteArray>
 #include <QObject>
 #include <QTimer>
 
 #include <functional>
 #include <string>
 #include <vector>
-
-class QNetworkAccessManager;
-class QNetworkReply;
 
 /* What one request to the GitHub releases API gave. */
 struct FetchResult {
@@ -28,22 +24,28 @@ struct FetchResult {
 
 /* One HTTPS GET of
  *   https://api.github.com/repos/angeloruggieridj/obs-multiview-pro/releases?per_page=10
- * with only the headers GitHub asks for (Accept, X-GitHub-Api-Version), a
- * fixed "Accept-Language: en" (Qt would send the system language) and
- * User-Agent "obs-multiview-pro/<version>": no cookies, no credentials, no
- * cache, nothing else about the machine.
+ * through the libcurl that OBS itself ships (OBS's Qt has no TLS backend on
+ * Windows). Headers: Accept, X-GitHub-Api-Version (what GitHub asks for), a
+ * fixed "Accept-Language: en" and User-Agent "obs-multiview-pro/<version>": no
+ * cookies, no credentials, nothing else about the machine. Certificates are
+ * always verified (system store / the TLS library's default CA bundle).
  *
- * Asynchronous on the UI thread (QNetworkAccessManager); nothing here ever
- * waits. Limits: 10 s without data or 15 s in total, 1 MB of response,
- * redirects only to https hosts under github.com / githubusercontent.com,
- * JSON only. No retries. One request at a time: start() while one is in
- * flight is ignored. Destroying the checker (or cancel()) aborts the request
- * and the callback is never called afterwards.
+ * Never blocks the UI thread: the transfer runs through curl_multi, pumped by
+ * a 50 ms QTimer on the UI thread while a request is in flight (DNS is
+ * resolved asynchronously by libcurl; a libcurl without asynchronous DNS is
+ * not used). No worker threads of our own.
+ *
+ * Limits: 10 s to connect, aborted below 1 byte/s for 10 s, 15 s in total,
+ * 1 MB of response, JSON only, redirects followed by hand (at most 3) and only
+ * to https hosts under github.com / githubusercontent.com. No retries. One
+ * request at a time: start() while one is in flight is ignored. Destroying the
+ * checker (or cancel()) removes and frees the transfer at once; the callback
+ * is never called afterwards.
  *
  * Test aid: the environment variable OBS_MULTIVIEW_PRO_UPDATE_URL replaces the
  * address when it starts with "https://", "http://127.0.0.1:" or
  * "http://localhost:" (ignored otherwise), so the check can be run against a
- * local test server. */
+ * local test server; plain http is allowed only for such an override. */
 class UpdateChecker : public QObject {
 	Q_OBJECT
 
@@ -53,7 +55,7 @@ public:
 	explicit UpdateChecker(QObject *parent = nullptr);
 	~UpdateChecker() override;
 
-	bool busy() const { return m_reply != nullptr || m_pending_error; }
+	bool busy() const { return m_easy != nullptr || m_pending_error; }
 
 	/* Starts a request; `done` is called once on the UI thread, never from
 	 * inside start(). False (and `done` dropped) when one is in flight. */
@@ -62,19 +64,29 @@ public:
 	/* Aborts a request in flight without calling its callback. */
 	void cancel();
 
-private:
-	enum class AbortReason { None, TooLarge, BadRedirect, Timeout };
+	/* "libcurl 8.12.1, Schannel" or why secure requests are not possible;
+	 * for the log. */
+	static std::string transport_description();
 
-	void on_finished();
+private:
+	static size_t write_cb(char *data, size_t size, size_t count, void *self);
+
+	bool begin_request(const std::string &url, std::string &error);
+	void release_transfer();
+	void pump();
+	void on_done(int curl_code);
 	void fail_soon(const std::string &message);
 	void finish(const FetchResult &result);
 
-	QNetworkAccessManager *m_nam = nullptr; /* created on first use */
-	QNetworkReply *m_reply = nullptr;
+	void *m_multi = nullptr;  /* CURLM*, created on first use */
+	void *m_easy = nullptr;   /* CURL* in flight */
+	void *m_headers = nullptr; /* curl_slist* of m_easy */
+	bool m_global_init = false;
+	bool m_plain_http_allowed = false; /* only for a local test override */
+	int m_redirects = 0;
+	bool m_too_large = false;
+	std::string m_body;
 	Callback m_done;
-	QByteArray m_body;
-	AbortReason m_abort_reason = AbortReason::None;
 	bool m_pending_error = false; /* an error is being reported without a request */
-	QTimer m_deadline;            /* overall time limit */
-	QTimer m_idle;                /* no data for this long */
+	QTimer m_pump;
 };
