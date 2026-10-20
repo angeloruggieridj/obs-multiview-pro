@@ -25,7 +25,7 @@
  * close, plugin unload). The write is atomic (os_quick_write_utf8_file_safe:
  * settings.json.tmp, then renamed over settings.json) and the file is a few
  * hundred bytes, so it never blocks the UI for long. A failed write is logged
- * once and otherwise ignored.
+ * once; the changes stay pending and are retried by the next flush.
  *
  * Reading: lazily on first use. A file that is not valid, or has another
  * version, is renamed once to settings.json.bad (an older .bad is replaced),
@@ -73,5 +73,7 @@ private:
 	 * the user's data with defaults) until a later read succeeds. */
 	bool m_blocked = false;
 	bool m_block_warned = false;
+	bool m_final = false; /* shutdown() is flushing */
+	bool m_final_warned = false;
 	QTimer m_timer;
 };

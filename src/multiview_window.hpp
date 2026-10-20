@@ -6,6 +6,7 @@
 #include "layout_model.hpp"
 #include "tile_assignment.hpp"
 
+#include <QElapsedTimer>
 #include <QPoint>
 #include <QTimer>
 #include <QWidget>
@@ -86,6 +87,10 @@ private:
 	std::string m_collection;
 	/* A collection switch is in progress: no assignment is saved. */
 	bool m_switching = false;
+	QElapsedTimer m_switch_clock; /* since the switch began */
+	/* True while a switch is in progress; one that has been "in progress" for
+	 * far longer than any load takes (CHANGING without CHANGED) is ended. */
+	bool switching_now();
 	TileAssignment m_assignment; /* UI thread only */
 	std::unique_ptr<ObsState> m_state;
 	std::unique_ptr<MultiviewRenderer> m_renderer;

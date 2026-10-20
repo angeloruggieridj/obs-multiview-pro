@@ -26,6 +26,7 @@
 constexpr size_t kMaxSettingsBytes = 1024 * 1024;
 constexpr int kMaxInstances = 100;      /* instance indices 0..99 */
 constexpr size_t kMaxSlotsStored = 64;  /* per collection list */
+constexpr size_t kMaxCollectionsStored = 64; /* per instance: the most recently saved ones are kept */
 
 struct WindowSettings {
 	Preset preset = Preset::Scenes8;
@@ -33,6 +34,14 @@ struct WindowSettings {
 	bool meters = true;
 	/* Scene collection name -> scene name per slot ("" = empty slot). */
 	std::map<std::string, std::vector<std::string>> collections;
+
+	/* Not stored in the file. */
+	/* set_options was called on this entry in this session: only then do its
+	 * preset / safe_areas / meters override the file's when merging. */
+	bool options_touched = false;
+	/* Collection names, oldest save first, for pruning (names missing from
+	 * here count as older than any listed). */
+	std::vector<std::string> collection_order;
 
 	bool operator==(const WindowSettings &o) const
 	{
@@ -78,8 +87,14 @@ enum class LoadAction {
 
 LoadAction decide_load(LoadOutcome outcome, ParseStatus status);
 
-/* Puts the entries of `overlay` over `base`: options of an instance present in
- * both are taken from `overlay`, collections are merged by name (overlay wins).
+/* Marks `name` as the most recently saved collection of `w`, then drops the
+ * oldest ones until at most `max_collections` remain (the marked one is always
+ * kept while max_collections >= 1). Keeps the file below the reader's size cap. */
+void note_collection_saved(WindowSettings &w, const std::string &name, size_t max_collections = kMaxCollectionsStored);
+
+/* Puts the entries of `overlay` over `base`: the options (preset, safe areas,
+ * meters) of an instance are taken from `overlay` only when its
+ * options_touched is set; collections are merged by name (overlay wins).
  * Used when a file that was unreadable at first can be read later and the
  * changes made meanwhile must be applied to it. */
 void merge_settings(SettingsFile &base, const SettingsFile &overlay);

@@ -357,8 +357,10 @@ TEST_CASE("state_settings_merge_keeps_file_and_applies_in_memory_changes")
 	base.instances[2].meters = false;
 	SettingsFile over;
 	over.instances[0].preset = Preset::Scenes4;
+	over.instances[0].options_touched = true;
 	over.instances[0].collections["B"] = {"b9"};
 	over.instances[1].safe_areas = false;
+	over.instances[1].options_touched = true;
 	merge_settings(base, over);
 	CHECK(base.instances.at(0).preset == Preset::Scenes4);
 	CHECK(base.instances.at(0).collections.at("A") == std::vector<std::string>({"a1", "a2"}));
@@ -377,4 +379,59 @@ TEST_CASE("state_settings_assignment_save_guard")
 	/* The current collection is no longer the one the slots belong to. */
 	CHECK_FALSE(may_save_assignment(false, "A", "B"));
 	CHECK(may_save_assignment(false, "", ""));
+}
+
+TEST_CASE("state_settings_merge_keeps_file_options_of_an_untouched_instance")
+{
+	SettingsFile base;
+	base.instances[0].preset = Preset::Scenes24;
+	base.instances[0].safe_areas = false;
+	base.instances[0].meters = false;
+	SettingsFile over; /* only set_assignment was called: defaults + a collection */
+	over.instances[0].collections["A"] = {"a1"};
+	merge_settings(base, over);
+	CHECK(base.instances.at(0).preset == Preset::Scenes24);
+	CHECK_FALSE(base.instances.at(0).safe_areas);
+	CHECK_FALSE(base.instances.at(0).meters);
+	CHECK(base.instances.at(0).collections.at("A") == std::vector<std::string>({"a1"}));
+}
+
+TEST_CASE("state_settings_collections_are_capped_to_the_most_recent")
+{
+	WindowSettings w;
+	for (int i = 0; i < 10; ++i) {
+		const std::string n = "c" + std::to_string(i);
+		w.collections[n] = {"s"};
+		note_collection_saved(w, n, 4);
+	}
+	CHECK(w.collections.size() == 4);
+	CHECK(w.collections.count("c9"));
+	CHECK(w.collections.count("c6"));
+	CHECK_FALSE(w.collections.count("c5"));
+	/* saving an older one again makes it the newest */
+	w.collections["c6"] = {"x"};
+	note_collection_saved(w, "c6", 4);
+	w.collections["c10"] = {"s"};
+	note_collection_saved(w, "c10", 4);
+	CHECK(w.collections.count("c6"));
+	CHECK_FALSE(w.collections.count("c7"));
+	/* names that were never ordered (loaded from a file) are the oldest */
+	WindowSettings f;
+	f.collections = {{"a", {"1"}}, {"b", {"1"}}, {"c", {"1"}}};
+	f.collections["d"] = {"1"};
+	note_collection_saved(f, "d", 2);
+	CHECK(f.collections.size() == 2);
+	CHECK(f.collections.count("d"));
+	CHECK(f.collections.count("c"));
+	/* the capped file stays far below the reader's limit */
+	SettingsFile file;
+	WindowSettings big;
+	for (int i = 0; i < 200; ++i) {
+		const std::string n = std::string(200, 'n') + std::to_string(i);
+		big.collections[n] = std::vector<std::string>(kMaxSlotsStored, std::string(100, 's'));
+		note_collection_saved(big, n);
+	}
+	file.instances[0] = big;
+	CHECK(big.collections.size() == kMaxCollectionsStored);
+	CHECK(to_json(file).size() < kMaxSettingsBytes);
 }

@@ -24,6 +24,7 @@ void SettingsStore::shutdown()
 {
 	if (!g_store)
 		return;
+	g_store->m_final = true;
 	g_store->flush();
 	delete g_store;
 	g_store = nullptr;
@@ -136,6 +137,7 @@ void SettingsStore::set_options(int instance, Preset preset, bool safe_areas, bo
 	w.preset = preset;
 	w.safe_areas = safe_areas;
 	w.meters = meters;
+	w.options_touched = true;
 	mark_dirty();
 }
 
@@ -152,6 +154,7 @@ void SettingsStore::set_assignment(int instance, const std::string &collection, 
 	if (it != w.collections.end() && it->second == kept)
 		return;
 	w.collections[collection] = std::move(kept);
+	note_collection_saved(w, collection);
 	mark_dirty();
 }
 
@@ -167,10 +170,18 @@ void SettingsStore::flush()
 	if (!m_dirty)
 		return;
 	ensure_loaded(); /* retries while the file is blocked */
-	if (m_blocked)
-		return; /* stay dirty: written once the file can be read */
-	m_dirty = false;
-	if (!write_file() && !m_write_warned) {
+	if (m_blocked) {
+		/* Stay dirty: written once the file can be read. */
+		if (m_final && !m_final_warned) {
+			m_final_warned = true;
+			obs_log(LOG_WARNING, "the multiview settings could not be saved: the settings file cannot be read");
+		}
+		return;
+	}
+	if (write_file()) {
+		m_dirty = false;
+	} else if (!m_write_warned) {
+		/* Stays dirty, so the next flush (the final one at exit too) retries. */
 		m_write_warned = true;
 		obs_log(LOG_WARNING, "cannot save the multiview settings (further failures are not logged)");
 	}
@@ -188,5 +199,7 @@ bool SettingsStore::write_file()
 		os_mkdirs(dir.c_str());
 	}
 	const std::string json = to_json(m_file);
+	if (json.size() > kMaxSettingsBytes)
+		return false; /* the reader would reject it: keep the file we have */
 	return os_quick_write_utf8_file_safe(file.c_str(), json.data(), json.size(), false, "tmp", nullptr);
 }

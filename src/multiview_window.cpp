@@ -417,6 +417,23 @@ void MultiviewWindow::on_scenes_changed()
 void MultiviewWindow::on_scene_collection_changing()
 {
 	m_switching = true;
+	m_switch_clock.start();
+}
+
+/* A collection load runs synchronously on the UI thread, so no user action can
+ * be handled during one; seeing "switching" this long afterwards means the
+ * CHANGED event never came. Treat the switch as over and pick up whatever
+ * collection is current, so saving does not stay disabled for good. */
+bool MultiviewWindow::switching_now()
+{
+	constexpr qint64 kStaleSwitchMs = 30000;
+	if (m_switching && m_switch_clock.hasExpired(kStaleSwitchMs)) {
+		if (m_state && m_renderer && current_collection_name() != m_collection)
+			on_scene_collection_changed();
+		else
+			m_switching = false;
+	}
+	return m_switching;
 }
 
 void MultiviewWindow::on_scene_collection_changed()
@@ -454,7 +471,7 @@ void MultiviewWindow::save_options()
 
 void MultiviewWindow::save_assignment()
 {
-	if (!m_renderer || !may_save_assignment(m_switching, m_collection, current_collection_name()))
+	if (!m_renderer || !may_save_assignment(switching_now(), m_collection, current_collection_name()))
 		return;
 	SettingsStore::instance().set_assignment(m_instance, m_collection,
 						 m_assignment.names(scene_slot_count(m_renderer->preset())));

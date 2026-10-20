@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "settings.hpp"
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
@@ -598,13 +600,42 @@ LoadAction decide_load(LoadOutcome outcome, ParseStatus status)
 	return LoadAction::BlockWrites;
 }
 
+void note_collection_saved(WindowSettings &w, const std::string &name, size_t max_collections)
+{
+	/* Normalised order: unlisted names first (oldest), then the listed ones,
+	 * each once, and `name` last. */
+	std::vector<std::string> order;
+	order.reserve(w.collections.size() + 1);
+	for (const auto &c : w.collections) {
+		if (c.first != name && std::find(w.collection_order.begin(), w.collection_order.end(), c.first) ==
+					       w.collection_order.end())
+			order.push_back(c.first);
+	}
+	for (const std::string &n : w.collection_order)
+		if (n != name && w.collections.count(n) && std::find(order.begin(), order.end(), n) == order.end())
+			order.push_back(n);
+	if (w.collections.count(name))
+		order.push_back(name);
+
+	size_t drop = 0;
+	while (order.size() - drop > max_collections && drop < order.size()) {
+		w.collections.erase(order[drop]);
+		++drop;
+	}
+	order.erase(order.begin(), order.begin() + static_cast<std::ptrdiff_t>(drop));
+	w.collection_order = std::move(order);
+}
+
 void merge_settings(SettingsFile &base, const SettingsFile &overlay)
 {
 	for (const auto &inst : overlay.instances) {
 		WindowSettings &dst = base.instances[inst.first];
-		dst.preset = inst.second.preset;
-		dst.safe_areas = inst.second.safe_areas;
-		dst.meters = inst.second.meters;
+		if (inst.second.options_touched) {
+			dst.preset = inst.second.preset;
+			dst.safe_areas = inst.second.safe_areas;
+			dst.meters = inst.second.meters;
+			dst.options_touched = true;
+		}
 		for (const auto &col : inst.second.collections)
 			dst.collections[col.first] = col.second;
 	}
