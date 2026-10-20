@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "appearance.hpp"
 
+#include <cstddef>
+
 int clamp_percent(long long value)
 {
 	return value < 0 ? 0 : (value > 100 ? 100 : static_cast<int>(value));
