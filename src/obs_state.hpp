@@ -81,6 +81,8 @@ public:
 
 signals:
 	void scenes_changed();
+	/* A scene collection switch starts (emitted before the scene list moves). */
+	void scene_collection_changing();
 	/* The whole scene set was replaced (collection switch / finished loading).
 	 * Emitted after scenes_changed. */
 	void scene_collection_changed();

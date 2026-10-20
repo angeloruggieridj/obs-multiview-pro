@@ -49,39 +49,62 @@ std::string SettingsStore::path() const
 
 void SettingsStore::ensure_loaded()
 {
-	if (m_loaded)
-		return;
+	if (!m_loaded || m_blocked)
+		load();
+}
+
+/* Reads the whole file. Only a fully read buffer that does not parse counts as
+ * corrupt; a file that exists but cannot be read (sharing violation, access
+ * denied, read error) is left alone and writes are blocked until it can. */
+void SettingsStore::load()
+{
 	m_loaded = true;
 
 	const std::string file = path();
-	if (file.empty() || !os_file_exists(file.c_str()))
-		return; /* nothing saved yet */
-
 	std::string text;
-	bool too_big = false;
-	if (FILE *f = os_fopen(file.c_str(), "rb")) {
-		char buf[4096];
-		size_t n;
-		while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
-			text.append(buf, n);
-			if (text.size() > kMaxSettingsBytes) {
-				too_big = true;
-				break;
+	LoadOutcome outcome = LoadOutcome::Missing;
+	if (!file.empty() && os_file_exists(file.c_str())) {
+		outcome = LoadOutcome::Unreadable;
+		if (FILE *f = os_fopen(file.c_str(), "rb")) {
+			char buf[4096];
+			size_t n;
+			while ((n = fread(buf, 1, sizeof(buf), f)) > 0) {
+				text.append(buf, n);
+				if (text.size() > kMaxSettingsBytes)
+					break; /* from_json rejects it as too large */
 			}
+			if (!ferror(f))
+				outcome = LoadOutcome::Read;
+			fclose(f);
 		}
-		fclose(f);
-	} else {
-		obs_log(LOG_WARNING, "cannot read the settings file; using defaults");
-		return;
 	}
 
 	ParseStatus status = ParseStatus::Ok;
-	SettingsFile parsed = too_big ? SettingsFile() : from_json(text, &status);
-	if (too_big)
-		status = ParseStatus::Corrupt;
-	if (status == ParseStatus::Ok) {
-		m_file = std::move(parsed);
+	SettingsFile parsed;
+	if (outcome == LoadOutcome::Read)
+		parsed = from_json(text, &status);
+
+	switch (decide_load(outcome, status)) {
+	case LoadAction::UseDefaults:
+		m_blocked = false;
 		return;
+	case LoadAction::UseParsed:
+		/* Changes made while the file was blocked go over what it holds. */
+		merge_settings(parsed, m_file);
+		m_file = std::move(parsed);
+		m_blocked = false;
+		return;
+	case LoadAction::BlockWrites:
+		m_blocked = true;
+		if (!m_block_warned) {
+			m_block_warned = true;
+			obs_log(LOG_WARNING,
+				"cannot read the settings file; using defaults and not writing until it can be read");
+		}
+		return;
+	case LoadAction::BackupAndUseDefaults:
+		m_blocked = false;
+		break;
 	}
 
 	/* Keep the unreadable file for inspection (once; an older .bad is
@@ -142,6 +165,9 @@ void SettingsStore::flush()
 	m_timer.stop();
 	if (!m_dirty)
 		return;
+	ensure_loaded(); /* retries while the file is blocked */
+	if (m_blocked)
+		return; /* stay dirty: written once the file can be read */
 	m_dirty = false;
 	if (!write_file() && !m_write_warned) {
 		m_write_warned = true;

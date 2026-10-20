@@ -57,7 +57,10 @@ private:
 	SettingsStore();
 	~SettingsStore() override;
 
+	/* Reads the file if not done yet, or again while it is blocked (exists
+	 * but was unreadable). */
 	void ensure_loaded();
+	void load();
 	void mark_dirty();
 	bool write_file();
 	std::string path() const;
@@ -66,5 +69,9 @@ private:
 	bool m_loaded = false;
 	bool m_dirty = false;
 	bool m_write_warned = false;
+	/* The file exists but could not be read: never write (it would replace
+	 * the user's data with defaults) until a later read succeeds. */
+	bool m_blocked = false;
+	bool m_block_warned = false;
 	QTimer m_timer;
 };

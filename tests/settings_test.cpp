@@ -333,3 +333,48 @@ TEST_CASE("state_settings_output_is_deterministic")
 	CHECK(to_json(f) == to_json(from_json(to_json(f))));
 	CHECK(!to_json(f).empty());
 }
+
+TEST_CASE("state_settings_load_decision")
+{
+	/* Nothing saved yet: defaults, writing allowed. */
+	CHECK(decide_load(LoadOutcome::Missing, ParseStatus::Ok) == LoadAction::UseDefaults);
+	/* Fully read: valid is used, invalid is set aside as .bad. */
+	CHECK(decide_load(LoadOutcome::Read, ParseStatus::Ok) == LoadAction::UseParsed);
+	CHECK(decide_load(LoadOutcome::Read, ParseStatus::Corrupt) == LoadAction::BackupAndUseDefaults);
+	CHECK(decide_load(LoadOutcome::Read, ParseStatus::WrongVersion) == LoadAction::BackupAndUseDefaults);
+	/* Exists but could not be read: never touch it (no .bad, no overwrite),
+	 * whatever the (meaningless) parse status says. */
+	CHECK(decide_load(LoadOutcome::Unreadable, ParseStatus::Ok) == LoadAction::BlockWrites);
+	CHECK(decide_load(LoadOutcome::Unreadable, ParseStatus::Corrupt) == LoadAction::BlockWrites);
+}
+
+TEST_CASE("state_settings_merge_keeps_file_and_applies_in_memory_changes")
+{
+	SettingsFile base;
+	base.instances[0].preset = Preset::Scenes24;
+	base.instances[0].collections["A"] = {"a1", "a2"};
+	base.instances[0].collections["B"] = {"b1"};
+	base.instances[2].meters = false;
+	SettingsFile over;
+	over.instances[0].preset = Preset::Scenes4;
+	over.instances[0].collections["B"] = {"b9"};
+	over.instances[1].safe_areas = false;
+	merge_settings(base, over);
+	CHECK(base.instances.at(0).preset == Preset::Scenes4);
+	CHECK(base.instances.at(0).collections.at("A") == std::vector<std::string>({"a1", "a2"}));
+	CHECK(base.instances.at(0).collections.at("B") == std::vector<std::string>({"b9"}));
+	CHECK_FALSE(base.instances.at(1).safe_areas);
+	CHECK_FALSE(base.instances.at(2).meters);
+}
+
+TEST_CASE("state_settings_assignment_save_guard")
+{
+	/* Normal: the window's collection is the current one. */
+	CHECK(may_save_assignment(false, "A", "A"));
+	/* A collection switch is in progress: never. */
+	CHECK_FALSE(may_save_assignment(true, "A", "A"));
+	CHECK_FALSE(may_save_assignment(true, "A", "B"));
+	/* The current collection is no longer the one the slots belong to. */
+	CHECK_FALSE(may_save_assignment(false, "A", "B"));
+	CHECK(may_save_assignment(false, "", ""));
+}

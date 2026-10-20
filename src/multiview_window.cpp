@@ -74,6 +74,8 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 	 * so the assignment is up to date when the renderer re-resolves the slots
 	 * (slots run in connection order). */
 	connect(m_state.get(), &ObsState::scenes_changed, this, &MultiviewWindow::on_scenes_changed);
+	connect(m_state.get(), &ObsState::scene_collection_changing, this,
+		&MultiviewWindow::on_scene_collection_changing);
 	connect(m_state.get(), &ObsState::scene_collection_changed, this,
 		&MultiviewWindow::on_scene_collection_changed);
 	m_renderer = std::make_unique<MultiviewRenderer>(*m_state);
@@ -412,13 +414,21 @@ void MultiviewWindow::on_scenes_changed()
 		}
 }
 
+void MultiviewWindow::on_scene_collection_changing()
+{
+	m_switching = true;
+}
+
 void MultiviewWindow::on_scene_collection_changed()
 {
-	if (!m_state || !m_renderer)
+	if (!m_state || !m_renderer) {
+		m_switching = false;
 		return;
+	}
 	/* The assignment of the new collection (default fill when it has none).
 	 * The old one was saved with every change, nothing to write here. */
 	load_assignment();
+	m_switching = false; /* m_collection and the slots belong to the new collection */
 	assignment_changed_no_save();
 }
 
@@ -444,7 +454,7 @@ void MultiviewWindow::save_options()
 
 void MultiviewWindow::save_assignment()
 {
-	if (!m_renderer)
+	if (!m_renderer || !may_save_assignment(m_switching, m_collection, current_collection_name()))
 		return;
 	SettingsStore::instance().set_assignment(m_instance, m_collection,
 						 m_assignment.names(scene_slot_count(m_renderer->preset())));

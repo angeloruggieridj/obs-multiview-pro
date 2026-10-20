@@ -62,3 +62,29 @@ Preset preset_from_name(const std::string &name);
 
 std::string to_json(const SettingsFile &file);
 SettingsFile from_json(const std::string &json, ParseStatus *status = nullptr);
+
+/* ---- Loading policy (pure, the OS part lives in SettingsStore) ------------ */
+
+/* What reading the file gave. Unreadable = it exists but could not be read
+ * completely (sharing violation, permissions, read error). */
+enum class LoadOutcome { Missing, Read, Unreadable };
+
+enum class LoadAction {
+	UseDefaults,          /* nothing saved: defaults, writing allowed */
+	UseParsed,            /* valid content */
+	BackupAndUseDefaults, /* fully read but invalid: rename to .bad, defaults */
+	BlockWrites,          /* never overwrite what could not be read; retry later */
+};
+
+LoadAction decide_load(LoadOutcome outcome, ParseStatus status);
+
+/* Puts the entries of `overlay` over `base`: options of an instance present in
+ * both are taken from `overlay`, collections are merged by name (overlay wins).
+ * Used when a file that was unreadable at first can be read later and the
+ * changes made meanwhile must be applied to it. */
+void merge_settings(SettingsFile &base, const SettingsFile &overlay);
+
+/* Assignments may be saved only when no scene collection switch is in progress
+ * and the window's collection is still the current one: during a switch the
+ * scene list is transient and the slots would be stored under the wrong key. */
+bool may_save_assignment(bool switching, const std::string &window_collection, const std::string &current_collection);

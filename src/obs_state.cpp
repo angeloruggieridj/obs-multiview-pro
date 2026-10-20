@@ -77,6 +77,8 @@ void ObsState::handle_event(enum obs_frontend_event event)
 		break;
 	case OBS_FRONTEND_EVENT_SCENE_LIST_CHANGED:
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
+		if (event == OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING)
+			emit scene_collection_changing();
 	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
 	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
 		emit scenes_changed();

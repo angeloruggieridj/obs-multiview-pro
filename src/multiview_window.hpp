@@ -68,6 +68,7 @@ private:
 	void sync_scene_names();
 	void on_scenes_changed();
 	void on_scene_collection_changed();
+	void on_scene_collection_changing();
 	void assignment_changed();
 	void assignment_changed_no_save();
 	/* Persistence (SettingsStore: debounced write, final flush on close). */
@@ -83,6 +84,8 @@ private:
 	const int m_instance;
 	/* Scene collection the assignment belongs to (the settings key). */
 	std::string m_collection;
+	/* A collection switch is in progress: no assignment is saved. */
+	bool m_switching = false;
 	TileAssignment m_assignment; /* UI thread only */
 	std::unique_ptr<ObsState> m_state;
 	std::unique_ptr<MultiviewRenderer> m_renderer;

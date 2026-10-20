@@ -584,3 +584,33 @@ SettingsFile from_json(const std::string &json, ParseStatus *status)
 		*status = ParseStatus::Ok;
 	return file;
 }
+
+LoadAction decide_load(LoadOutcome outcome, ParseStatus status)
+{
+	switch (outcome) {
+	case LoadOutcome::Missing:
+		return LoadAction::UseDefaults;
+	case LoadOutcome::Unreadable:
+		return LoadAction::BlockWrites;
+	case LoadOutcome::Read:
+		return status == ParseStatus::Ok ? LoadAction::UseParsed : LoadAction::BackupAndUseDefaults;
+	}
+	return LoadAction::BlockWrites;
+}
+
+void merge_settings(SettingsFile &base, const SettingsFile &overlay)
+{
+	for (const auto &inst : overlay.instances) {
+		WindowSettings &dst = base.instances[inst.first];
+		dst.preset = inst.second.preset;
+		dst.safe_areas = inst.second.safe_areas;
+		dst.meters = inst.second.meters;
+		for (const auto &col : inst.second.collections)
+			dst.collections[col.first] = col.second;
+	}
+}
+
+bool may_save_assignment(bool switching, const std::string &window_collection, const std::string &current_collection)
+{
+	return !switching && window_collection == current_collection;
+}
