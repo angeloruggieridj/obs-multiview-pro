@@ -84,7 +84,7 @@ Close OBS before copying. Needs OBS Studio 32.1 or newer.
 
 Scenes with *Show in Multiview* off are skipped, like the native one.
 
-**Settings.** Open **Tools → Multiview Settings…** or right-click a window → **Settings…**. *Border colour* is the frame under and around the tiles (default grey; the red program and green preview outlines do not change). *Label opacity* is the opacity of scene names, Preview and Program, 0–100 % (default 50 %, the native look; the label background follows it, 0 hides the labels). *Meter opacity* is the opacity of the audio meters, 0–100 % (default 100 %). The settings apply to all windows and are saved.
+**Settings.** Open **Tools → Multiview Settings...** or right-click a window → **Settings...**. *Border colour* is the frame under and around the tiles (default grey; the red program and green preview outlines do not change). *Label opacity* is the opacity of scene names, Preview and Program, 0–100 % (default 50 %, the native look; the label background follows it; 0 hides the labels and also removes the click-on-name scene menu). *Meter opacity* is the opacity of the audio meters, 0–100 % (default 100 %); every element fades on its own, so the contrast between lit and unlit parts drops at low values. The settings apply to all windows and are saved.
 
 ### Status and limits
 
@@ -173,7 +173,7 @@ Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo.
 
 Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo.
 
-**Impostazioni.** Apri **Strumenti → Multiview Settings…** oppure tasto destro sulla finestra → **Settings…**. *Border colour* è la cornice sotto e attorno ai riquadri (grigio di default; i contorni rosso del programma e verde dell'anteprima non cambiano). *Label opacity* è l'opacità di nomi delle scene, Preview e Program, 0–100 % (default 50 %, l'aspetto nativo; lo sfondo dell'etichetta la segue, 0 nasconde le etichette). *Meter opacity* è l'opacità dei meter audio, 0–100 % (default 100 %). Le impostazioni valgono per tutte le finestre e vengono salvate.
+**Impostazioni.** Apri **Strumenti → Multiview Settings...** oppure tasto destro sulla finestra → **Settings...**. *Border colour* è la cornice sotto e attorno ai riquadri (grigio di default; i contorni rosso del programma e verde dell'anteprima non cambiano). *Label opacity* è l'opacità di nomi delle scene, Preview e Program, 0–100 % (default 50 %, l'aspetto nativo; lo sfondo dell'etichetta la segue; 0 nasconde le etichette e toglie anche il menu delle scene al clic sul nome). *Meter opacity* è l'opacità dei meter audio, 0–100 % (default 100 %); ogni elemento sfuma per conto suo, quindi con valori bassi il contrasto tra parti accese e spente diminuisce. Le impostazioni valgono per tutte le finestre e vengono salvate.
 
 ### Stato e limiti
 

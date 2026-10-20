@@ -6,6 +6,7 @@
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
+#include <QAbstractButton>
 #include <QColor>
 #include <QColorDialog>
 #include <QDesktopServices>
@@ -53,10 +54,24 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
 	auto *tabs = new QTabWidget(this);
-	tabs->addTab(build_appearance_page(), tr("Appearance"));
-	tabs->addTab(build_about_page(), tr("About"));
+	/* Explicit English: the plugin has no translations, and Qt would translate
+	 * these stock texts on its own. */
+	tabs->addTab(build_appearance_page(), QStringLiteral("Appearance"));
+	tabs->addTab(build_about_page(), QStringLiteral("About"));
 
 	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
+	m_buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("OK"));
+	m_buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("Cancel"));
+	m_buttons->button(QDialogButtonBox::Apply)->setText(QStringLiteral("Apply"));
+	/* Enter in the hex field must only finish the edit, never press OK. */
+	for (QAbstractButton *b : m_buttons->buttons())
+		if (auto *pb = qobject_cast<QPushButton *>(b)) {
+			pb->setAutoDefault(false);
+			pb->setDefault(false);
+		}
+	m_preview_timer.setSingleShot(true);
+	m_preview_timer.setInterval(50);
+	connect(&m_preview_timer, &QTimer::timeout, this, [this] { SettingsStore::instance().preview_appearance(m_current); });
 	connect(m_buttons, &QDialogButtonBox::accepted, this, [this] {
 		apply();
 		accept();
@@ -131,7 +146,8 @@ QWidget *SettingsDialog::build_appearance_page()
 				   "Preview and Program (50 % is the OBS look). Meter opacity: the audio meters "
 				   "(100 % is the OBS look)."));
 	hint->setWordWrap(true);
-	auto *reset = new QPushButton(tr("Reset to defaults"));
+	auto *reset = new QPushButton(QStringLiteral("Reset to defaults"));
+	reset->setAutoDefault(false);
 	connect(reset, &QPushButton::clicked, this, [this] { values_edited(Appearance()); });
 
 	auto *outer = new QVBoxLayout(page);
@@ -209,13 +225,15 @@ void SettingsDialog::show_values(const Appearance &a, bool rewrite_hex)
 void SettingsDialog::values_edited(const Appearance &a, bool rewrite_hex)
 {
 	show_values(a, rewrite_hex);
-	SettingsStore::instance().preview_appearance(m_current);
+	m_preview_timer.start(); /* restarts: the preview follows the last change */
 }
 
 void SettingsDialog::pick_color()
 {
+	/* getColor runs a nested event loop: the dialog may be deleted meanwhile. */
+	QPointer<SettingsDialog> self(this);
 	const QColor c = QColorDialog::getColor(to_qcolor(m_current.border_rgb), this, tr("Border colour"));
-	if (!c.isValid())
+	if (!self || !c.isValid())
 		return;
 	Appearance a = m_current;
 	a.border_rgb = from_qcolor(c);
@@ -224,9 +242,13 @@ void SettingsDialog::pick_color()
 
 void SettingsDialog::apply()
 {
+	m_preview_timer.stop();
 	SettingsStore &store = SettingsStore::instance();
 	store.set_appearance(m_current);
 	m_saved = store.appearance();
+	/* Windows show exactly what is saved (also when a preview of another
+	 * value was still on screen and set_appearance had nothing to change). */
+	store.preview_appearance(m_saved);
 	update_buttons();
 }
 
@@ -238,7 +260,8 @@ void SettingsDialog::update_buttons()
 
 void SettingsDialog::reject()
 {
-	/* Takes the preview back. */
+	/* Takes the preview back (a pending one is dropped). */
+	m_preview_timer.stop();
 	SettingsStore &store = SettingsStore::instance();
 	store.preview_appearance(store.appearance());
 	QDialog::reject();

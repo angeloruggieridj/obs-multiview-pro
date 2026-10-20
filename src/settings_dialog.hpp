@@ -4,6 +4,7 @@
 #include "appearance.hpp"
 
 #include <QDialog>
+#include <QTimer>
 
 class QLineEdit;
 class QPushButton;
@@ -17,6 +18,8 @@ class QDialogButtonBox;
  * Changes preview live in every open multiview window (SettingsStore::
  * preview_appearance, nothing is saved). Apply saves them, OK saves and
  * closes, Cancel (or closing the dialog) takes the preview back.
+ *
+ * The preview is sent 50 ms after the last change (trailing edge).
  *
  * UI thread only. Not modal, so the windows can be watched while editing. */
 class SettingsDialog : public QDialog {
@@ -45,6 +48,9 @@ private:
 	Appearance m_saved;   /* what the store holds */
 	Appearance m_current; /* what the controls show */
 	bool m_updating = false;
+	/* Coalesces the preview: every window re-rasterizes its labels for a new
+	 * opacity, so a slider drag must not trigger one per step. */
+	QTimer m_preview_timer;
 
 	QPushButton *m_swatch = nullptr;
 	QLineEdit *m_hex = nullptr;
