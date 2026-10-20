@@ -26,7 +26,7 @@ std::vector<obs_source_t *> collect_scene_audio_sources(obs_source_t *scene_sour
  *  - attach_sources(list): one obs_volmeter per source, the level of a channel
  *    is the maximum over the sources (the preview meter);
  *  - attach_program_mix(): the program mix, from obs_add_raw_audio_callback on
- *    mix 0 (track 1), downmixed to stereo by libobs.
+ *    mix 0 (track 1), in the output's own channel layout (L and R are its first two channels).
  *
  * Threading. attach*, detach, update_source_state and the destructor run on
  * one thread (the Qt UI thread). The OBS callbacks run on audio / source
@@ -99,6 +99,7 @@ private:
 	std::vector<std::unique_ptr<Feed>> m_entries; /* UI thread only */
 	bool m_program = false;                       /* UI thread only */
 
+	std::atomic<int> m_channels{2}; /* output channel count, set before the callback is added */
 	std::atomic<float> m_latest[2];
 	std::atomic<float> m_peak[2];
 };

@@ -126,7 +126,10 @@ void AudioMeter::volmeter_cb(void *param, const float[MAX_AUDIO_CHANNELS], const
 }
 
 /* Audio thread, once per 1024-frame packet, under libobs's audio input mutex.
- * The conversion requested below makes the data float planar stereo. */
+ * The data is float planar in the OBS output's own channel layout (no
+ * downmix is requested, so libobs adds no resampler on the audio thread); L
+ * and R are planes 0 and 1 when the output has at least two channels, and a
+ * mono output mirrors plane 0 (plane 1 is not valid then). */
 void AudioMeter::raw_audio_cb(void *param, size_t, struct audio_data *data)
 {
 	AudioMeter *self = static_cast<AudioMeter *>(param);
@@ -135,7 +138,7 @@ void AudioMeter::raw_audio_cb(void *param, size_t, struct audio_data *data)
 	const float *left = reinterpret_cast<const float *>(data->data[0]);
 	const float l = amplitude_to_db(peak_of(left, data->frames));
 	float r = l;
-	if (data->data[1])
+	if (self->m_channels.load(std::memory_order_relaxed) >= 2 && data->data[1])
 		r = amplitude_to_db(peak_of(reinterpret_cast<const float *>(data->data[1]), data->frames));
 	self->publish(sanitize_db(l), sanitize_db(r));
 }
@@ -209,13 +212,18 @@ void AudioMeter::attach_sources(std::vector<obs_source_t *> sources)
 void AudioMeter::attach_program_mix()
 {
 	detach();
-	/* Float planar stereo, unclamped (levels above 0 dB are visible as
-	 * clipping), at the output sample rate. The same callback / param pair is
-	 * only ever registered once (detach() above). */
+	/* Float planar in the output's own layout and rate (SPEAKERS_UNKNOWN:
+	 * libobs then adds no conversion on the audio thread), unclamped (levels
+	 * above 0 dB are visible as clipping). The channel count is read here, on
+	 * the UI thread, before the callback exists. The same callback / param
+	 * pair is only ever registered once (detach() above). */
+	const audio_t *audio = obs_get_audio();
+	const size_t channels = audio ? audio_output_get_channels(audio) : 2;
+	m_channels.store(channels >= 1 ? static_cast<int>(channels) : 2, std::memory_order_relaxed);
 	audio_convert_info conv = {};
 	conv.samples_per_sec = 0; /* output rate */
 	conv.format = AUDIO_FORMAT_FLOAT_PLANAR;
-	conv.speakers = SPEAKERS_STEREO;
+	conv.speakers = SPEAKERS_UNKNOWN;
 	conv.allow_clipping = true;
 	obs_add_raw_audio_callback(0, &conv, &AudioMeter::raw_audio_cb, this);
 	m_program = true;
