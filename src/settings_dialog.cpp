@@ -2,11 +2,14 @@
 #include "settings_dialog.hpp"
 
 #include "settings_store.hpp"
+#include "update_logic.hpp"
+#include "update_manager.hpp"
 
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
 
 #include <QAbstractButton>
+#include <QCheckBox>
 #include <QColor>
 #include <QColorDialog>
 #include <QDesktopServices>
@@ -27,8 +30,12 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QTextBrowser>
+#include <QTextDocument>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <string>
 
 namespace {
 
@@ -46,6 +53,26 @@ uint32_t from_qcolor(const QColor &c)
 
 QPointer<SettingsDialog> g_dialog; /* UI thread only */
 
+constexpr const char *kReleaseTagUrl = "https://github.com/angeloruggieridj/obs-multiview-pro/releases/tag/";
+
+/* Release notes come from the network: nothing they reference is ever loaded
+ * (images, style sheets, other documents), and links are only reported
+ * through anchorClicked, never followed by the widget. */
+class OfflineTextBrowser : public QTextBrowser {
+public:
+	using QTextBrowser::QTextBrowser;
+
+protected:
+	QVariant loadResource(int, const QUrl &) override { return QVariant(); }
+};
+
+/* Opens `url` in the browser only when it is a page of this project. */
+void open_release_url(const std::string &url)
+{
+	if (is_allowed_release_url(url))
+		QDesktopServices::openUrl(QUrl(QString::fromStdString(url), QUrl::StrictMode));
+}
+
 } // namespace
 
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
@@ -55,9 +82,12 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
 	auto *tabs = new QTabWidget(this);
+	m_tabs = tabs;
 	/* Explicit English: the plugin has no translations, and Qt would translate
 	 * these stock texts on its own. */
 	tabs->addTab(build_appearance_page(), QStringLiteral("Appearance"));
+	m_updates_page = build_updates_page();
+	tabs->addTab(m_updates_page, QStringLiteral("Updates"));
 	tabs->addTab(build_about_page(), QStringLiteral("About"));
 
 	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
@@ -85,7 +115,27 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	layout->addWidget(m_buttons);
 	setMinimumWidth(460);
 
+	connect(&UpdateManager::instance(), &UpdateManager::state_changed, this, [this] { show_update_state(); });
+	connect(&UpdateManager::instance(), &UpdateManager::marker_changed, this, [this] { show_update_state(); });
 	reload();
+	show_update_state();
+}
+
+void SettingsDialog::show_page(SettingsPage page)
+{
+	switch (page) {
+	case SettingsPage::Keep:
+		break;
+	case SettingsPage::Appearance:
+		m_tabs->setCurrentIndex(0);
+		break;
+	case SettingsPage::Updates:
+		m_tabs->setCurrentWidget(m_updates_page);
+		break;
+	case SettingsPage::About:
+		m_tabs->setCurrentIndex(m_tabs->count() - 1);
+		break;
+	}
 }
 
 QWidget *SettingsDialog::build_appearance_page()
@@ -162,6 +212,119 @@ QWidget *SettingsDialog::build_appearance_page()
 	return page;
 }
 
+QWidget *SettingsDialog::build_updates_page()
+{
+	auto *page = new QWidget;
+	auto *layout = new QVBoxLayout(page);
+
+	layout->addWidget(new QLabel(QStringLiteral("Installed version: %1").arg(QString::fromUtf8(PLUGIN_VERSION))));
+
+	m_update_status = new QLabel;
+	m_update_status->setWordWrap(true);
+	m_update_status->setTextFormat(Qt::PlainText);
+	QFont bold = m_update_status->font();
+	bold.setBold(true);
+	m_update_status->setFont(bold);
+	m_check_now = new QPushButton(QStringLiteral("Check for updates now"));
+	m_check_now->setAutoDefault(false);
+	auto *status_row = new QHBoxLayout;
+	status_row->addWidget(m_update_status, 1);
+	status_row->addWidget(m_check_now);
+	layout->addLayout(status_row);
+	connect(m_check_now, &QPushButton::clicked, this,
+		[this] { UpdateManager::instance().check_now(m_prereleases->isChecked()); });
+
+	m_auto_check = new QCheckBox(QStringLiteral("Check for updates automatically (once a day, contacts github.com)"));
+	m_prereleases = new QCheckBox(QStringLiteral("Include pre-releases"));
+	layout->addWidget(m_auto_check);
+	layout->addWidget(m_prereleases);
+	connect(m_auto_check, &QCheckBox::toggled, this, [this] { update_buttons(); });
+	connect(m_prereleases, &QCheckBox::toggled, this, [this] { update_buttons(); });
+
+	m_changelog = new OfflineTextBrowser;
+	m_changelog->setOpenLinks(false);
+	m_changelog->setOpenExternalLinks(false);
+	m_changelog->setPlaceholderText(QStringLiteral("The change log of newer versions appears here after a check."));
+	m_changelog->setMinimumHeight(180);
+	connect(m_changelog, &QTextBrowser::anchorClicked, this,
+		[](const QUrl &url) { open_release_url(url.toString(QUrl::FullyEncoded).toStdString()); });
+	layout->addWidget(m_changelog, 1);
+
+	m_open_page = new QPushButton(QStringLiteral("Open download page"));
+	m_open_page->setAutoDefault(false);
+	m_skip = new QPushButton(QStringLiteral("Skip this version"));
+	m_skip->setAutoDefault(false);
+	auto *buttons = new QHBoxLayout;
+	buttons->addWidget(m_open_page);
+	buttons->addWidget(m_skip);
+	buttons->addStretch(1);
+	layout->addLayout(buttons);
+	connect(m_open_page, &QPushButton::clicked, this, [] {
+		const UpdateManager &m = UpdateManager::instance();
+		if (m.state().status == UpdateStatus::UpdateAvailable)
+			open_release_url(m.state().url);
+		else if (!m.marker_version().empty())
+			open_release_url(kReleaseTagUrl + m.marker_version());
+	});
+	connect(m_skip, &QPushButton::clicked, this, [] { UpdateManager::instance().skip_latest(); });
+
+	auto *hint = new QLabel(QStringLiteral(
+		"A check sends one request to api.github.com; the only information it carries is the plugin "
+		"version (in the User-Agent). Automatic checks run at most once a day and never while "
+		"streaming or recording. Nothing is downloaded or installed: the download page opens in "
+		"your browser."));
+	hint->setWordWrap(true);
+	layout->addWidget(hint);
+	return page;
+}
+
+void SettingsDialog::show_update_state()
+{
+	if (!m_update_status)
+		return;
+	const UpdateManager &m = UpdateManager::instance();
+	const UpdateState &st = m.state();
+	const std::string skipped = SettingsStore::instance().updates().skipped_version;
+	const std::string &marker = m.marker_version();
+
+	std::string status = update_status_text(st, skipped);
+	bool can_open = false;
+	bool can_skip = false;
+	std::string markdown;
+	switch (st.status) {
+	case UpdateStatus::Idle:
+		if (!marker.empty()) {
+			status = "Version " + version_for_display(marker) +
+				 " is available (found by an earlier check). Check now to see the change log.";
+			can_open = true;
+			can_skip = true;
+		}
+		break;
+	case UpdateStatus::UpdateAvailable:
+		can_open = !st.url.empty();
+		can_skip = st.latest != skipped;
+		markdown = st.changelog;
+		break;
+	case UpdateStatus::UpToDate:
+		markdown = st.installed_notes;
+		break;
+	case UpdateStatus::Checking:
+	case UpdateStatus::NoReleases:
+	case UpdateStatus::Error:
+		break;
+	}
+
+	m_update_status->setText(QString::fromStdString(status));
+	m_check_now->setEnabled(!m.busy());
+	m_open_page->setEnabled(can_open);
+	m_skip->setEnabled(can_skip);
+	/* Raw HTML in the notes stays text; images were stripped and
+	 * OfflineTextBrowser loads no resource anyway. */
+	m_changelog->document()->setMarkdown(QString::fromStdString(markdown),
+					     QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub |
+									     QTextDocument::MarkdownNoHTML));
+}
+
 QWidget *SettingsDialog::build_about_page()
 {
 	auto *page = new QWidget;
@@ -193,7 +356,13 @@ QWidget *SettingsDialog::build_about_page()
 
 void SettingsDialog::reload()
 {
-	m_saved = SettingsStore::instance().appearance();
+	SettingsStore &store = SettingsStore::instance();
+	m_saved = store.appearance();
+	const UpdateSettings u = store.updates();
+	m_saved_auto_check = u.auto_check;
+	m_saved_prereleases = u.include_prereleases;
+	m_auto_check->setChecked(u.auto_check);
+	m_prereleases->setChecked(u.include_prereleases);
 	show_values(m_saved);
 }
 
@@ -250,13 +419,22 @@ void SettingsDialog::apply()
 	/* Windows show exactly what is saved (also when a preview of another
 	 * value was still on screen and set_appearance had nothing to change). */
 	store.preview_appearance(m_saved);
+
+	UpdateSettings u = store.updates();
+	u.auto_check = m_auto_check->isChecked();
+	u.include_prereleases = m_prereleases->isChecked();
+	store.set_updates(u);
+	m_saved_auto_check = u.auto_check;
+	m_saved_prereleases = u.include_prereleases;
 	update_buttons();
 }
 
 void SettingsDialog::update_buttons()
 {
 	if (QPushButton *apply_button = m_buttons ? m_buttons->button(QDialogButtonBox::Apply) : nullptr)
-		apply_button->setEnabled(m_current != m_saved);
+		apply_button->setEnabled(m_current != m_saved ||
+					 (m_auto_check && m_auto_check->isChecked() != m_saved_auto_check) ||
+					 (m_prereleases && m_prereleases->isChecked() != m_saved_prereleases));
 }
 
 /* Enter in a field only finishes that edit: it must not press OK (the button
@@ -282,12 +460,13 @@ void SettingsDialog::reject()
 	QDialog::reject();
 }
 
-void open_settings_dialog()
+void open_settings_dialog(SettingsPage page)
 {
 	if (!g_dialog) {
 		auto *parent = static_cast<QWidget *>(obs_frontend_get_main_window());
 		g_dialog = new SettingsDialog(parent);
 	}
+	g_dialog->show_page(page);
 	g_dialog->show();
 	g_dialog->raise();
 	g_dialog->activateWindow();

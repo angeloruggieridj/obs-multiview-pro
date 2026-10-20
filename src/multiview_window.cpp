@@ -6,6 +6,8 @@
 #include "preset_picker.hpp"
 #include "settings_dialog.hpp"
 #include "settings_store.hpp"
+#include "update_logic.hpp"
+#include "update_manager.hpp"
 #include "status_monitor.hpp"
 
 #include <obs-frontend-api.h>
@@ -614,6 +616,14 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 	auto *menu = new QMenu(this);
 	menu->setAttribute(Qt::WA_DeleteOnClose);
 	const QPoint global_pos = event->globalPos();
+
+	/* A check found a newer version: say so first, quietly (never a popup). */
+	if (const UpdateManager *updates = UpdateManager::existing(); updates && !updates->marker_version().empty()) {
+		const QString version = QString::fromStdString(version_for_display(updates->marker_version()));
+		QAction *update = menu->addAction(QStringLiteral("Update available: %1...").arg(version));
+		connect(update, &QAction::triggered, this, [] { open_settings_dialog(SettingsPage::Updates); });
+		menu->addSeparator();
+	}
 
 	const int slot = scene_slot_at(event->pos());
 	if (slot >= 0 && m_state) {

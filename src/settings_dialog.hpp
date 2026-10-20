@@ -6,19 +6,30 @@
 #include <QDialog>
 #include <QTimer>
 
+class QCheckBox;
 class QKeyEvent;
+class QLabel;
 class QLineEdit;
+class QTabWidget;
+class QTextBrowser;
 class QPushButton;
 class QSlider;
 class QSpinBox;
 class QDialogButtonBox;
 
+/* Pages of the settings dialog. */
+enum class SettingsPage { Keep, Appearance, Updates, About };
+
 /* The plugin settings: an "Appearance" tab (frame colour under the tiles,
- * label opacity, meter opacity) and an "About" tab.
+ * label opacity, meter opacity), an "Updates" tab (installed version, check
+ * now, automatic check and pre-release options, change log of the newer
+ * releases, download page, skip) and an "About" tab.
  *
- * Changes preview live in every open multiview window (SettingsStore::
- * preview_appearance, nothing is saved). Apply saves them, OK saves and
- * closes, Cancel (or closing the dialog) takes the preview back.
+ * Appearance changes preview live in every open multiview window
+ * (SettingsStore::preview_appearance, nothing is saved). Apply saves them and
+ * the two update options, OK saves and closes, Cancel (or closing the dialog)
+ * takes the preview back and drops unsaved option changes. "Check for updates
+ * now" and "Skip this version" act at once.
  *
  * The preview is sent 50 ms after the last change (trailing edge).
  *
@@ -28,6 +39,8 @@ class SettingsDialog : public QDialog {
 
 public:
 	explicit SettingsDialog(QWidget *parent = nullptr);
+
+	void show_page(SettingsPage page);
 
 	/* Shows the saved values again (the dialog is reused while it is open). */
 	void reload();
@@ -39,7 +52,10 @@ protected:
 
 private:
 	QWidget *build_appearance_page();
+	QWidget *build_updates_page();
 	QWidget *build_about_page();
+	/* Shows UpdateManager's state in the Updates tab. */
+	void show_update_state();
 	/* Puts `a` in the controls (the hex field only when `rewrite_hex`, so a
 	 * half-typed value is not replaced); nothing is previewed. */
 	void show_values(const Appearance &a, bool rewrite_hex = true);
@@ -51,6 +67,8 @@ private:
 
 	Appearance m_saved;   /* what the store holds */
 	Appearance m_current; /* what the controls show */
+	bool m_saved_auto_check = true;
+	bool m_saved_prereleases = false;
 	bool m_updating = false;
 	/* Coalesces the preview: every window re-rasterizes its labels for a new
 	 * opacity, so a slider drag must not trigger one per step. */
@@ -63,11 +81,21 @@ private:
 	QSlider *m_meter_slider = nullptr;
 	QSpinBox *m_meter_spin = nullptr;
 	QDialogButtonBox *m_buttons = nullptr;
+
+	QTabWidget *m_tabs = nullptr;
+	QWidget *m_updates_page = nullptr;
+	QLabel *m_update_status = nullptr;
+	QPushButton *m_check_now = nullptr;
+	QCheckBox *m_auto_check = nullptr;
+	QCheckBox *m_prereleases = nullptr;
+	QTextBrowser *m_changelog = nullptr;
+	QPushButton *m_open_page = nullptr;
+	QPushButton *m_skip = nullptr;
 };
 
 /* Tools menu / context menu entry point: opens the dialog, or raises the one
- * that is open (at most one). UI thread. */
-void open_settings_dialog();
+ * that is open (at most one), on `page`. UI thread. */
+void open_settings_dialog(SettingsPage page = SettingsPage::Keep);
 /* Closes and deletes the dialog if it is open, taking back any preview. Call
  * before the windows and the store go away (OBS exit, plugin unload). */
 void close_settings_dialog();
