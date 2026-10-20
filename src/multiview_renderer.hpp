@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "audio_meter.hpp"
 #include "label_cache.hpp"
 #include "label_metrics.hpp"
 #include "layout_model.hpp"
+#include "meter_scale.hpp"
 #include "safe_areas.hpp"
 #include "status_format.hpp"
 #include "status_tiles.hpp"
@@ -63,7 +65,17 @@ class ObsState;
  * (2x2 atlas plus the quads). It follows the same ownership rules as the label
  * batch: the graphics thread uploads it once per new batch (m_gfx_status),
  * shutdown() frees it in the graphics context. Per frame: one draw call, no
- * allocation, no upload, no Qt. */
+ * allocation, no upload, no Qt.
+ *
+ * Audio meters (Program: big, with a dB scale; Preview: small, bars only; both
+ * on the left edge of the tile): see set_audio_meters. The levels come from
+ * two AudioMeter objects (atomics written by OBS audio threads); each frame the
+ * graphics thread reads them once, runs the ballistics of the native meter
+ * (pure code, audio_meter_math) with the frame time, and draws a handful of
+ * solid quads. The dB numbers are rasterized once with Qt (render_meter_scale)
+ * and travel in the snapshot like the status atlas (one texture, one quad,
+ * m_gfx_scale). While the meters are off nothing is attached to OBS audio and
+ * render() only does one atomic load for them. */
 class MultiviewRenderer : public QObject {
 public:
 	using SceneForSlot = std::function<std::string(int)>;
@@ -101,6 +113,14 @@ public:
 	 * them on the first frame that does not. */
 	void set_safe_areas(bool on) { m_safe_areas.store(on, std::memory_order_relaxed); }
 	bool safe_areas() const { return m_safe_areas.load(std::memory_order_relaxed); }
+
+	/* UI thread. Shows or hides the audio meters on the Program and Preview
+	 * tiles (default on). Turning them on attaches the OBS audio callbacks
+	 * (program mix; in studio mode also one volmeter per audio source of the
+	 * preview scene); turning them off removes every one of them, so the
+	 * audio threads do no work for the multiview. */
+	void set_audio_meters(bool on);
+	bool audio_meters() const { return m_meters_on.load(std::memory_order_relaxed); }
 
 	/* UI thread. The latest StatusSnapshot (StatusMonitor). Rebuilds the
 	 * status tiles whose text changed; a no-op for layouts without them. */
@@ -170,6 +190,26 @@ private:
 		}
 	};
 
+	/* The scale text of the Program meter as one texture. Immutable. */
+	struct MeterScaleBatch {
+		uint64_t id = 0; /* unique, never reused */
+		std::shared_ptr<const MeterScaleImage> image;
+		RectF rect; /* canvas pixels (MeterGeometry::column) */
+	};
+
+	/* GPU object of the scale drawn last (graphics thread only). */
+	struct GfxScale {
+		uint64_t id = 0;
+		gs_texture_t *tex = nullptr;
+	};
+
+	/* Display state of the four bars (graphics thread only). */
+	struct MeterDisplay {
+		ChannelBallistics program[2];
+		ChannelBallistics preview[2];
+		uint64_t last_ns = 0; /* 0: first frame after the meters were turned on */
+	};
+
 	struct RenderSnapshot {
 		std::vector<Tile> tiles;    /* normalized */
 		std::vector<RectF> fillers; /* normalized, areas without tiles */
@@ -178,6 +218,7 @@ private:
 		bool studio_mode = false;
 		std::shared_ptr<const LabelBatch> labels; /* null: no labels */
 		std::shared_ptr<const StatusBatch> status; /* null: no status tiles */
+		std::shared_ptr<const MeterScaleBatch> meter_scale; /* null: meters off / no room */
 		uint32_t canvas_cx = 0; /* canvas the labels were laid out for */
 		uint32_t canvas_cy = 0;
 
@@ -204,6 +245,10 @@ private:
 	std::shared_ptr<const LabelBatch> make_batch(const std::vector<PlacedLabel> &placed);
 	void build_status(RenderSnapshot &snap);
 	std::shared_ptr<const StatusBatch> make_status_batch(const std::vector<PlacedStatus> &placed);
+	void build_meter_scale(RenderSnapshot &snap);
+	/* UI thread: (re)attaches the audio feeds to what is on air / in preview. */
+	void refresh_audio();
+	void poll_preview_audio();
 	float display_scale(float fw, float fh) const;
 	void check_canvas();
 	/* Graphics thread only (or with the draw callback gone, in graphics). */
@@ -211,6 +256,9 @@ private:
 	void destroy_gfx_labels();
 	bool upload_status(const StatusBatch &batch);
 	void destroy_gfx_status();
+	bool upload_scale(const MeterScaleBatch &batch);
+	void destroy_gfx_scale();
+	void draw_meters(const RenderSnapshot &snap, float fw, float fh, bool labels_ok);
 	void release_showing();
 	void publish(std::shared_ptr<const RenderSnapshot> snapshot);
 
@@ -252,8 +300,20 @@ private:
 	std::shared_ptr<const StatusBatch> m_status_batch;
 	uint64_t m_next_status_id = 1;
 
+	/* UI thread only: audio meters. m_pgm_audio / m_pvw_audio are also read
+	 * (atomics only) by the graphics thread; they live as long as the renderer. */
+	AudioMeter m_pgm_audio;
+	AudioMeter m_pvw_audio;
+	QTimer m_audio_timer; /* studio mode: preview scene items changed? */
+	std::shared_ptr<const MeterScaleBatch> m_scale_batch;
+	std::vector<int> m_scale_key; /* what m_scale_batch was rasterized for */
+	uint64_t m_next_scale_id = 1;
+
 	/* Graphics thread only (see the class comment). */
 	GfxLabels m_gfx;
+	GfxScale m_gfx_scale;
+	MeterDisplay m_meter;
+	std::atomic<bool> m_meters_on{true};
 	GfxStatus m_gfx_status;
 	SafeAreas m_safe;
 	std::atomic<bool> m_safe_areas{true};

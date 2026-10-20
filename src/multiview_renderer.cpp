@@ -3,6 +3,7 @@
 #include "obs_state.hpp"
 
 #include <obs.h>
+#include <util/platform.h>
 
 #include <QCoreApplication>
 
@@ -110,7 +111,19 @@ MultiviewRenderer::MultiviewRenderer(ObsState &state) : m_state(state)
 	connect(&m_state, &ObsState::preview_changed, this, [this] { rebuild_snapshot(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { rebuild_snapshot(); });
 
+	/* Audio feeds follow what is in preview (studio mode). Connected after the
+	 * snapshot handlers above, so those run first. */
+	connect(&m_state, &ObsState::scenes_changed, this, [this] { refresh_audio(); });
+	connect(&m_state, &ObsState::preview_changed, this, [this] { refresh_audio(); });
+	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { refresh_audio(); });
+	/* Items added to / removed from / shown in the preview scene have no
+	 * cheap event: look again twice a second, in studio mode with meters on
+	 * only (the timer is stopped otherwise). */
+	m_audio_timer.setInterval(500);
+	connect(&m_audio_timer, &QTimer::timeout, this, [this] { poll_preview_audio(); });
+
 	set_preset(Preset::Scenes8);
+	refresh_audio();
 }
 
 MultiviewRenderer::~MultiviewRenderer()
@@ -217,6 +230,7 @@ void MultiviewRenderer::rebuild_snapshot()
 
 	build_labels(*snap);
 	build_status(*snap);
+	build_meter_scale(*snap);
 	publish(std::move(snap));
 }
 
@@ -565,6 +579,132 @@ void MultiviewRenderer::destroy_gfx_status()
 	m_gfx_status = GfxStatus();
 }
 
+void MultiviewRenderer::set_audio_meters(bool on)
+{
+	if (m_shut_down || on == m_meters_on.load(std::memory_order_relaxed))
+		return;
+	m_meters_on.store(on, std::memory_order_relaxed);
+	refresh_audio(); /* attaches or detaches every feed */
+	rebuild_snapshot(); /* adds or drops the scale texture */
+}
+
+/* The program feed is the raw program mix and does not depend on the scene:
+ * attached once while the meters are on. The preview feed is one volmeter per
+ * audio source of the preview scene, in studio mode only (outside it the
+ * Preview tile shows the program, so its meter mirrors the program levels). */
+void MultiviewRenderer::refresh_audio()
+{
+	if (m_shut_down)
+		return;
+	if (!m_meters_on.load(std::memory_order_relaxed)) {
+		m_audio_timer.stop();
+		m_pvw_audio.detach();
+		m_pgm_audio.detach();
+		return;
+	}
+	if (!m_pgm_audio.attached())
+		m_pgm_audio.attach_program_mix();
+
+	if (!m_state.studio_mode()) {
+		m_audio_timer.stop();
+		m_pvw_audio.detach();
+		return;
+	}
+	if (!m_audio_timer.isActive())
+		m_audio_timer.start();
+	poll_preview_audio();
+}
+
+void MultiviewRenderer::poll_preview_audio()
+{
+	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !m_state.studio_mode())
+		return;
+
+	std::vector<obs_source_t *> sources;
+	const std::string name = m_state.preview_scene();
+	if (!name.empty()) {
+		obs_source_t *scene = obs_get_source_by_name(name.c_str());
+		if (scene) {
+			if (!obs_source_removed(scene))
+				sources = collect_scene_audio_sources(scene);
+			obs_source_release(scene);
+		}
+	}
+
+	if (m_pvw_audio.has_sources(sources)) {
+		/* Unchanged: drop the extra references. */
+		for (obs_source_t *s : sources)
+			obs_source_release(s);
+		m_pvw_audio.update_channel_layout();
+		return;
+	}
+	m_pvw_audio.attach_sources(std::move(sources));
+}
+
+/* The dB numbers of the Program meter, rasterized when their size changes. */
+void MultiviewRenderer::build_meter_scale(RenderSnapshot &snap)
+{
+	snap.meter_scale = nullptr;
+	if (!m_meters_on.load(std::memory_order_relaxed) || m_canvas_cx == 0 || m_canvas_cy == 0) {
+		m_scale_batch = nullptr;
+		m_scale_key.clear();
+		return;
+	}
+	const float fw = float(m_canvas_cx);
+	const float fh = float(m_canvas_cy);
+	for (const Tile &t : m_tiles) {
+		if (t.kind != TileKind::Program)
+			continue;
+		/* Same inner rect as render() paints. */
+		const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+				     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+		if (inner.w <= 0.f || inner.h <= 0.f)
+			break;
+		const MeterGeometry g = meter_geometry(inner, true);
+		const float dscale = display_scale(fw, fh);
+		const int w = std::min(2048, std::max(1, int(std::lround(g.column.w * dscale))));
+		const int h = std::min(2048, std::max(1, int(std::lround(g.column.h * dscale))));
+		const std::vector<int> key = {w, h, int(std::lround(g.column.w * 16.f)),
+					      int(std::lround(g.column.h * 16.f)), int(std::lround(g.bar[0].h * 16.f))};
+		if (!m_scale_batch || key != m_scale_key) {
+			auto image = render_meter_scale(g, w, h);
+			if (!image) {
+				m_scale_batch = nullptr;
+			} else {
+				auto batch = std::make_shared<MeterScaleBatch>();
+				batch->id = m_next_scale_id++;
+				batch->image = std::move(image);
+				batch->rect = g.column;
+				m_scale_batch = std::move(batch);
+			}
+			m_scale_key = key;
+		}
+		snap.meter_scale = m_scale_batch;
+		return;
+	}
+	m_scale_batch = nullptr;
+	m_scale_key.clear();
+}
+
+bool MultiviewRenderer::upload_scale(const MeterScaleBatch &batch)
+{
+	if (m_gfx_scale.id == batch.id)
+		return m_gfx_scale.tex != nullptr;
+	destroy_gfx_scale(); /* graphics context; only when the scale changed */
+	m_gfx_scale.id = batch.id; /* also on failure: not retried every frame */
+	if (!batch.image || batch.image->pixels.empty())
+		return false;
+	const uint8_t *data = batch.image->pixels.data();
+	m_gfx_scale.tex = gs_texture_create(uint32_t(batch.image->w), uint32_t(batch.image->h), GS_BGRA, 1, &data, 0);
+	return m_gfx_scale.tex != nullptr;
+}
+
+void MultiviewRenderer::destroy_gfx_scale()
+{
+	gs_texture_destroy(m_gfx_scale.tex); /* null-safe */
+	m_gfx_scale = GfxScale();
+}
+
 void MultiviewRenderer::check_canvas()
 {
 	if (m_shut_down)
@@ -675,6 +815,12 @@ void MultiviewRenderer::shutdown()
 	disconnect(&m_state, nullptr, this, nullptr);
 
 	m_canvas_timer.stop();
+	/* Every OBS audio callback goes first: after these return none is running
+	 * and none can start, so nothing touches this object from an audio thread. */
+	m_audio_timer.stop();
+	m_pvw_audio.detach();
+	m_pgm_audio.detach();
+	m_scale_batch.reset();
 	publish(nullptr);
 	release_showing();
 	m_label_hits.clear();
@@ -687,15 +833,18 @@ void MultiviewRenderer::shutdown()
 
 	/* The draw callback is gone (class contract), so nothing else touches
 	 * m_gfx or m_safe now. gs_* objects are freed inside the graphics context. */
-	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_gfx_status.atlas || m_gfx_status.quads || m_safe.ready()) {
+	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_gfx_status.atlas || m_gfx_status.quads || m_gfx_scale.tex ||
+	    m_safe.ready()) {
 		obs_enter_graphics();
 		destroy_gfx_labels();
 		destroy_gfx_status();
+		destroy_gfx_scale();
 		m_safe.shutdown();
 		obs_leave_graphics();
 	}
 	m_gfx = GfxLabels();
 	m_gfx_status = GfxStatus();
+	m_gfx_scale = GfxScale();
 }
 
 void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
@@ -852,6 +1001,8 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 					   backgroundColor);
 	}
 
+	draw_meters(*snap, fw, fh, labels_ok);
+
 	/* Labels last (each sits inside its own tile, so the order does not change
 	 * the picture), all in two draws: the labelColor boxes, then the text from
 	 * the atlas drawn like the native text source's Render (default effect,
@@ -896,4 +1047,113 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 	}
 
 	end_region();
+}
+
+/* Graphics thread, inside render()'s whole-canvas region (canvas coordinates).
+ * Reads each AudioMeter once, steps the ballistics, then draws per bar: the
+ * dark bands of the empty scale, the bright bands up to the level and the
+ * peak-hold tick (OBS_EFFECT_SOLID, the colour set before every draw because
+ * libobs resets effect parameters after each loop), and finally the dB text
+ * as one textured quad. No allocation, no Qt, no logging. */
+void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float fh, bool labels_ok)
+{
+	if (!m_meters_on.load(std::memory_order_relaxed)) {
+		if (m_gfx_scale.id)
+			destroy_gfx_scale();
+		m_meter = MeterDisplay();
+		return;
+	}
+
+	/* Frame time; the first frame after switching on has no history. */
+	const uint64_t now = os_gettime_ns();
+	const float dt = m_meter.last_ns ? float(double(now - m_meter.last_ns) * 1e-9) : 0.0f;
+	m_meter.last_ns = now;
+
+	const std::array<float, 2> pgm = m_pgm_audio.take_peaks();
+	/* Outside studio mode the Preview tile shows the program (as its video). */
+	const std::array<float, 2> pvw = snap.studio_mode ? m_pvw_audio.take_peaks() : pgm;
+	for (int c = 0; c < 2; ++c) {
+		ballistics_step(m_meter.program[c], pgm[size_t(c)], dt);
+		ballistics_step(m_meter.preview[c], pvw[size_t(c)], dt);
+	}
+
+	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
+
+	auto fill = [&](float x, float y, float w, float h, uint32_t argb) {
+		const uint32_t pw = uint32_t(std::lround(w));
+		const uint32_t ph = uint32_t(std::lround(h));
+		if (pw == 0 || ph == 0)
+			return;
+		gs_matrix_push();
+		gs_matrix_translate3f(std::round(x), std::round(y), 0.0f);
+		gs_effect_set_color(color, argb);
+		while (gs_effect_loop(solid, "Solid"))
+			gs_draw_sprite(nullptr, 0, pw, ph);
+		gs_matrix_pop();
+	};
+
+	/* Draws a run of a bar between two fractions of its height. */
+	auto run = [&](const RectF &bar, const MeterSegment &s, bool fg) {
+		const float top = bar.y + bar.h * (1.0f - s.f1);
+		fill(bar.x, top, bar.w, bar.h * (s.f1 - s.f0), meter_color(s.zone, fg));
+	};
+
+	auto draw_meter = [&](const MeterGeometry &g, const ChannelBallistics (&st)[2]) {
+		fill(g.column.x, g.column.y, g.column.w, g.column.h, 0x99000000);
+		MeterSegment seg[3];
+		for (int c = 0; c < 2; ++c) {
+			const RectF &bar = g.bar[c];
+			int n = meter_segments(1.0f, seg);
+			for (int i = 0; i < n; ++i)
+				run(bar, seg[i], false);
+			n = meter_segments(db_to_fraction(st[c].peak_db), seg);
+			for (int i = 0; i < n; ++i)
+				run(bar, seg[i], true);
+			if (st[c].hold_db > kMeterMinDb) {
+				const float th = std::max(1.0f, bar.h * 0.005f);
+				const float y = std::min(meter_y_for_db(g, st[c].hold_db), bar.y + bar.h - th);
+				fill(bar.x, y, bar.w, th, peak_hold_color(st[c].hold_db));
+			}
+		}
+	};
+
+	bool scale_drawn = false;
+	for (const Tile &t : snap.tiles) {
+		if (t.kind != TileKind::Program && t.kind != TileKind::Preview)
+			continue;
+		const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+				     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+		if (inner.w <= 0.0f || inner.h <= 0.0f)
+			continue;
+		if (t.kind == TileKind::Program) {
+			draw_meter(meter_geometry(inner, true), m_meter.program);
+			scale_drawn = true;
+		} else {
+			draw_meter(meter_geometry(inner, false), m_meter.preview);
+		}
+	}
+
+	/* dB numbers and L / R captions: one textured quad, the same path as the
+	 * label text. */
+	const MeterScaleBatch *sb = snap.meter_scale.get();
+	if (!sb || !scale_drawn || !labels_ok || !upload_scale(*sb)) {
+		if (!sb && m_gfx_scale.id)
+			destroy_gfx_scale();
+		return;
+	}
+	gs_effect_t *def = obs_get_base_effect(OBS_EFFECT_DEFAULT);
+	gs_eparam_t *image = gs_effect_get_param_by_name(def, "image");
+	const uint32_t tw = uint32_t(sb->image->w);
+	const uint32_t th = uint32_t(sb->image->h);
+	gs_matrix_push();
+	gs_matrix_translate3f(sb->rect.x, sb->rect.y, 0.0f);
+	gs_matrix_scale3f(sb->rect.w / float(tw), sb->rect.h / float(th), 1.0f);
+	const bool previous = gs_framebuffer_srgb_enabled();
+	gs_enable_framebuffer_srgb(true);
+	gs_effect_set_texture_srgb(image, m_gfx_scale.tex);
+	while (gs_effect_loop(def, "Draw"))
+		gs_draw_sprite(m_gfx_scale.tex, 0, tw, th);
+	gs_enable_framebuffer_srgb(previous);
+	gs_matrix_pop();
 }

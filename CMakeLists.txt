@@ -43,6 +43,8 @@ target_sources(
     src/safe_areas.cpp src/safe_areas.hpp src/safe_area_geometry.cpp src/safe_area_geometry.hpp
     src/status_format.cpp src/status_format.hpp src/status_tiles.cpp src/status_tiles.hpp
     src/status_monitor.cpp src/status_monitor.hpp
+    src/audio_meter_math.cpp src/audio_meter_math.hpp src/audio_meter.cpp src/audio_meter.hpp
+    src/meter_scale.cpp src/meter_scale.hpp
 )
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 

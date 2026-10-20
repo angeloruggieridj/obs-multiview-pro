@@ -7,12 +7,14 @@ add_executable(
   label_metrics_test.cpp
   safe_area_geometry_test.cpp
   status_format_test.cpp
+  audio_meter_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/label_metrics.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/safe_area_geometry.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/status_format.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/audio_meter_math.cpp
 )
 target_include_directories(
   unit_tests

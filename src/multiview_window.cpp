@@ -503,6 +503,13 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 
 	/* No button bar in this window: the toggle lives in the menu. */
 	if (m_renderer) {
+		QAction *meters = menu->addAction(tr("Audio meters"));
+		meters->setCheckable(true);
+		meters->setChecked(m_renderer->audio_meters());
+		connect(meters, &QAction::toggled, this, [this](bool on) {
+			if (m_renderer)
+				m_renderer->set_audio_meters(on);
+		});
 		QAction *safe = menu->addAction(tr("Safe areas"));
 		safe->setCheckable(true);
 		safe->setChecked(m_renderer->safe_areas());
