@@ -93,8 +93,14 @@ void SettingsStore::load()
 	case LoadAction::UseParsed:
 		/* Changes made while the file was blocked go over what it holds. */
 		merge_settings(parsed, m_file, m_appearance_touched);
-		m_file = std::move(parsed);
-		m_blocked = false;
+		{
+			const Appearance before = normalized(m_file.appearance);
+			m_file = std::move(parsed);
+			m_blocked = false;
+			/* A file that could not be read at first may hold other values. */
+			if (normalized(m_file.appearance) != before)
+				emit appearance_changed(normalized(m_file.appearance));
+		}
 		return;
 	case LoadAction::BlockWrites:
 		m_blocked = true;

@@ -524,3 +524,60 @@ TEST_CASE("state_settings_appearance_does_not_disturb_instances")
 	g.appearance.label_opacity = 21;
 	CHECK(f != g);
 }
+
+TEST_CASE("state_settings_merge_appearance_touched_vs_untouched")
+{
+	SettingsFile base;
+	base.appearance = custom_appearance();
+	base.instances[0] = sample();
+	SettingsFile over; /* only the options of an instance were touched: defaults elsewhere */
+	over.instances[1].collections["A"] = {"a1"};
+	merge_settings(base, over); /* appearance not touched: the file's one stays */
+	CHECK(base.appearance == custom_appearance());
+	merge_settings(base, over, false);
+	CHECK(base.appearance == custom_appearance());
+
+	Appearance mine;
+	mine.border_rgb = 0x102030;
+	mine.label_opacity = 7;
+	mine.meter_opacity = 9;
+	over.appearance = mine;
+	merge_settings(base, over, true); /* touched: the overlay wins */
+	CHECK(base.appearance == mine);
+}
+
+TEST_CASE("state_settings_merge_appearance_only_leaves_instance_options")
+{
+	SettingsFile base;
+	base.instances[0] = sample();
+	const WindowSettings before = base.instances[0];
+	SettingsFile over;
+	over.appearance = custom_appearance();
+	merge_settings(base, over, true);
+	CHECK(base.appearance == custom_appearance());
+	CHECK(base.instances.at(0) == before);
+	CHECK(base.instances.size() == 1);
+	CHECK_FALSE(base.instances.at(0).options_touched);
+}
+
+TEST_CASE("state_settings_appearance_number_rounding")
+{
+	auto label = [](const std::string &n) {
+		return from_json("{\"version\":1,\"global\":{\"appearance\":{\"label_opacity\":" + n + "}}}")
+			.appearance.label_opacity;
+	};
+	CHECK(label("33.4") == 33);
+	CHECK(label("33.5") == 34);
+	CHECK(label("33.6") == 34);
+	CHECK(label("0.4") == 0);
+	CHECK(label("0.5") == 1);
+	CHECK(label("99.5") == 100);
+	CHECK(label("1e1") == 10);
+	CHECK(label("2.5E+1") == 25);
+	CHECK(label("500e-1") == 50);
+	CHECK(label("-0") == 0);
+	CHECK(label("-0.4") == 0);
+	CHECK(label("1E400") == 100);
+	CHECK(label("1e-400") == 0);
+	CHECK(label("100") == 100);
+}

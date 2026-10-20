@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
+#include <cmath>
 #include <utility>
 
 namespace {
@@ -492,13 +492,65 @@ WindowSettings window_from_value(const JValue &obj)
 	return w;
 }
 
+/* Value of a JSON number literal (the parser already checked its grammar).
+ * Locale independent; saturates instead of overflowing. */
+double number_value(const std::string &s)
+{
+	size_t i = 0;
+	bool neg = false;
+	if (i < s.size() && s[i] == '-') {
+		neg = true;
+		++i;
+	}
+	double v = 0.0;
+	int exp10 = 0;
+	bool frac = false;
+	for (; i < s.size(); ++i) {
+		const char c = s[i];
+		if (c >= '0' && c <= '9') {
+			if (v < 1e15) {
+				v = v * 10.0 + (c - '0');
+				if (frac)
+					--exp10;
+			} else if (!frac) {
+				++exp10; /* digit beyond double precision */
+			}
+		} else if (c == '.') {
+			frac = true;
+		} else {
+			break; /* e / E */
+		}
+	}
+	if (i < s.size()) {
+		++i; /* e / E */
+		bool eneg = false;
+		if (i < s.size() && (s[i] == '+' || s[i] == '-')) {
+			eneg = s[i] == '-';
+			++i;
+		}
+		int e = 0;
+		for (; i < s.size() && s[i] >= '0' && s[i] <= '9'; ++i)
+			e = e < 100000 ? e * 10 + (s[i] - '0') : e;
+		exp10 += eneg ? -e : e;
+	}
+	if (v != 0.0) {
+		if (exp10 > 400)
+			v = 1e300;
+		else if (exp10 < -400)
+			v = 0.0;
+		else
+			v *= std::pow(10.0, exp10);
+	}
+	return neg ? -v : v;
+}
+
 /* A JSON number as a percentage: rounded, clamped to [0, 100]. Any other type
  * keeps `fallback`. */
 int percent_from_value(const JValue *v, int fallback)
 {
 	if (!v || v->type != JValue::Number)
 		return fallback;
-	const double d = std::strtod(v->s.c_str(), nullptr);
+	const double d = number_value(v->s);
 	if (!(d > 0.0))
 		return 0; /* also NaN */
 	if (d >= 100.0)
