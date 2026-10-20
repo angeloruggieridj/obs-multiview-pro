@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "appearance.hpp"
 #include "layout_model.hpp"
 #include "settings.hpp"
 
@@ -35,8 +36,16 @@
  *
  * Instances: a window has an index 0..N (lowest free one when it opens, see
  * plugin.cpp); closing a window frees its index, and the next window to take
- * it finds that instance's saved settings. */
+ * it finds that instance's saved settings.
+ *
+ * Appearance: one global section of the same file (colour of the frame under
+ * the tiles, label and meter opacity), shared by every window. Windows read it
+ * at construction and listen to appearance_changed() to follow changes live;
+ * the signal is emitted on the UI thread only, by set_appearance() (saved) and
+ * preview_appearance() (not saved, for the settings dialog). */
 class SettingsStore : public QObject {
+	Q_OBJECT
+
 public:
 	/* Created on first use (UI thread). */
 	static SettingsStore &instance();
@@ -50,8 +59,20 @@ public:
 	/* `slot_names`: scene name per slot, "" = empty. */
 	void set_assignment(int instance, const std::string &collection, const std::vector<std::string> &slot_names);
 
+	/* The saved appearance (defaults when nothing is saved). */
+	Appearance appearance();
+	/* Stores `a` (normalized), schedules the write and emits
+	 * appearance_changed. No-op when nothing changes. */
+	void set_appearance(const Appearance &a);
+	/* Emits appearance_changed(a) without saving: a preview in the open
+	 * windows. Calling it with appearance() takes the preview back. */
+	void preview_appearance(const Appearance &a);
+
 	/* Writes now if something changed since the last write. */
 	void flush();
+
+signals:
+	void appearance_changed(const Appearance &appearance);
 
 private:
 	SettingsStore();
@@ -67,6 +88,9 @@ private:
 
 	SettingsFile m_file;
 	bool m_loaded = false;
+	/* set_appearance was called in this session: only then it overrides the
+	 * file's when a blocked file can be read later. */
+	bool m_appearance_touched = false;
 	bool m_dirty = false;
 	bool m_write_warned = false;
 	/* The file exists but could not be read: never write (it would replace

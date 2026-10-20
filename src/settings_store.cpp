@@ -92,7 +92,7 @@ void SettingsStore::load()
 		return;
 	case LoadAction::UseParsed:
 		/* Changes made while the file was blocked go over what it holds. */
-		merge_settings(parsed, m_file);
+		merge_settings(parsed, m_file, m_appearance_touched);
 		m_file = std::move(parsed);
 		m_blocked = false;
 		return;
@@ -156,6 +156,29 @@ void SettingsStore::set_assignment(int instance, const std::string &collection, 
 	w.collections[collection] = std::move(kept);
 	note_collection_saved(w, collection);
 	mark_dirty();
+}
+
+Appearance SettingsStore::appearance()
+{
+	ensure_loaded();
+	return normalized(m_file.appearance);
+}
+
+void SettingsStore::set_appearance(const Appearance &a)
+{
+	ensure_loaded();
+	const Appearance n = normalized(a);
+	if (n == normalized(m_file.appearance))
+		return;
+	m_file.appearance = n;
+	m_appearance_touched = true;
+	mark_dirty();
+	emit appearance_changed(n);
+}
+
+void SettingsStore::preview_appearance(const Appearance &a)
+{
+	emit appearance_changed(normalized(a));
 }
 
 void SettingsStore::mark_dirty()
