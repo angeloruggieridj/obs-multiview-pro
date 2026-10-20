@@ -33,13 +33,13 @@
     },
     "platformConfig": {
         "macos": {
-            "bundleId": "com.example.obs-multiview-pro"
+            "bundleId": "io.github.angeloruggieridj.obs-multiview-pro"
         }
     },
     "name": "obs-multiview-pro",
-    "displayName": "OBS Multiview Pro",
+    "displayName": "Multiview Pro for OBS",
     "version": "0.1.0",
     "author": "Angelo Ruggieri",
-    "website": "https://example.invalid",
+    "website": "https://github.com/angeloruggieridj/obs-multiview-pro",
     "email": "19648591+angeloruggieridj@users.noreply.github.com"
 }
