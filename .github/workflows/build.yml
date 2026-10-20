@@ -115,7 +115,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config ccache \
-            libgles2-mesa-dev libsimde-dev obs-studio libobs-dev \
+            libgles2-mesa-dev libsimde-dev obs-studio \
             qt6-base-dev libqt6svg6-dev qt6-base-private-dev
 
       - name: Configure
