@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Mixer tile lists the audio sources of the program scene (and of the preview scene in studio mode) next to the global devices.
+- Mixer tile: at most 7 sources beside PGM; the others are left out and noted in the OBS log.
+- Option to keep the multiview window always on top (Settings, and the window menu).
+
 ## 1.0.0
 
 First stable release.
