@@ -177,6 +177,10 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	reload();
 	show_update_state();
 	m_keep_on_top = m_saved.always_on_top;
+#if !defined(_WIN32)
+	/* Set before the first show(): no native window to re-create yet. */
+	setWindowFlag(Qt::WindowStaysOnTopHint, m_keep_on_top);
+#endif
 }
 
 void SettingsDialog::show_page(SettingsPage page)
@@ -505,7 +509,9 @@ void SettingsDialog::set_on_top(bool on)
 void SettingsDialog::showEvent(QShowEvent *event)
 {
 	QDialog::showEvent(event);
-	apply_on_top();
+#if defined(_WIN32)
+	apply_on_top(); /* the z-order band only; elsewhere the flag is set before show() */
+#endif
 }
 
 void SettingsDialog::apply_on_top()
@@ -523,14 +529,20 @@ void SettingsDialog::apply_on_top()
 	apply(this);
 	apply(m_color_dialog.data());
 #else
-	/* A flag change re-creates the native window, hidden: show it again. */
+	/* A flag change re-creates the native window, hidden: show it again.
+	 * With the flag already right, a multiview window re-shown through its
+	 * own flag change may now be above: raise. */
 	auto apply = [this](QWidget *w) {
-		if (!w || w->windowFlags().testFlag(Qt::WindowStaysOnTopHint) == m_keep_on_top)
+		if (!w)
 			return;
-		const bool visible = w->isVisible();
-		w->setWindowFlag(Qt::WindowStaysOnTopHint, m_keep_on_top);
-		if (visible)
-			w->show();
+		if (w->windowFlags().testFlag(Qt::WindowStaysOnTopHint) != m_keep_on_top) {
+			const bool visible = w->isVisible();
+			w->setWindowFlag(Qt::WindowStaysOnTopHint, m_keep_on_top);
+			if (visible)
+				w->show();
+		} else if (m_keep_on_top && w->isVisible()) {
+			w->raise();
+		}
 	};
 	apply(this);
 	apply(m_color_dialog.data());
@@ -559,8 +571,13 @@ void SettingsDialog::pick_color()
 		a.border_rgb = from_qcolor(c);
 		values_edited(a);
 	});
+#if defined(_WIN32)
 	chooser->open();
 	apply_on_top(); /* above topmost windows too */
+#else
+	chooser->setWindowFlag(Qt::WindowStaysOnTopHint, m_keep_on_top); /* before show() */
+	chooser->open();
+#endif
 }
 
 void SettingsDialog::apply()
