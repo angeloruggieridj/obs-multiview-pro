@@ -787,6 +787,14 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 				save_options();
 			}
 		});
+		/* Global option (every window, saved at once); it shows only where
+		 * the audio meters are on. */
+		QAction *tile_meters = menu->addAction(T("Menu.TileMeters"));
+		tile_meters->setCheckable(true);
+		tile_meters->setChecked(m_renderer->appearance().tile_meters);
+		tile_meters->setEnabled(m_renderer->audio_meters());
+		connect(tile_meters, &QAction::toggled, this,
+			[](bool on) { SettingsStore::instance().set_tile_meters(on); });
 		QAction *safe = menu->addAction(T("Menu.SafeAreas"));
 		safe->setCheckable(true);
 		safe->setChecked(m_renderer->safe_areas());

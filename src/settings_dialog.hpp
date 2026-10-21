@@ -10,6 +10,7 @@
 class QCheckBox;
 class QColorDialog;
 class QKeyEvent;
+class QShowEvent;
 class QLabel;
 class QLineEdit;
 class QTabWidget;
@@ -23,7 +24,8 @@ class QDialogButtonBox;
 enum class SettingsPage { Keep, Appearance, Updates, About };
 
 /* The plugin settings: an "Appearance" tab (frame colour under the tiles,
- * label opacity, meter opacity, windows always on top), an "Updates" tab (installed version, check
+ * label opacity, meter opacity, meters on the scene tiles, windows always on
+ * top), an "Updates" tab (installed version, check
  * now, automatic check and pre-release options, change log of the newer
  * releases, download page, skip) and an "About" tab.
  *
@@ -34,6 +36,11 @@ enum class SettingsPage { Keep, Appearance, Updates, About };
  * now" and "Skip this version" act at once.
  *
  * The preview is sent 50 ms after the last change (trailing edge).
+ *
+ * While the multiview windows are always on top (saved or previewed), the
+ * dialog and its colour chooser are kept above them too, so they never open
+ * hidden behind a topmost window (Windows: the topmost band of the native
+ * window; elsewhere Qt::WindowStaysOnTopHint).
  *
  * UI thread only. Not modal, so the windows can be watched while editing. */
 class SettingsDialog : public QDialog {
@@ -51,6 +58,7 @@ public:
 
 protected:
 	void keyPressEvent(QKeyEvent *event) override;
+	void showEvent(QShowEvent *event) override;
 
 private:
 	QWidget *build_appearance_page();
@@ -63,7 +71,11 @@ private:
 	void show_values(const Appearance &a, bool rewrite_hex = true);
 	/* The user changed a value: show it and preview it in the windows. */
 	void values_edited(const Appearance &a, bool rewrite_hex = true);
-	void follow_saved_on_top(bool on);
+	/* A toggle a window menu can also set was saved (see follow_saved_toggles). */
+	void follow_saved(const Appearance &saved);
+	/* Keeps the dialog (and the colour chooser) above topmost windows. */
+	void set_on_top(bool on);
+	void apply_on_top();
 	void pick_color();
 	void apply();
 	void update_buttons();
@@ -87,6 +99,8 @@ private:
 	QSlider *m_meter_slider = nullptr;
 	QSpinBox *m_meter_spin = nullptr;
 	QCheckBox *m_on_top = nullptr;
+	QCheckBox *m_tile_meters = nullptr;
+	bool m_keep_on_top = false; /* the windows are on top now (saved or previewed) */
 	QDialogButtonBox *m_buttons = nullptr;
 
 	QTabWidget *m_tabs = nullptr;

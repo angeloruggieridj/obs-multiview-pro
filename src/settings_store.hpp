@@ -45,7 +45,7 @@
  * set_appearance() (saved) and preview_appearance() (not saved, for the
  * settings dialog). appearance_saved() follows only a saved change, so the
  * dialog can follow a change made elsewhere (the window menu's "Always on
- * top").
+ * top" and "Meters on scene tiles").
  *
  * Updates: another global section (automatic check on/off, pre-releases,
  * time of the last attempt, last version seen, skipped version), used by
@@ -79,6 +79,8 @@ public:
 	 * value does not change, so an open settings dialog drops a preview of
 	 * the other value. */
 	void set_always_on_top(bool on);
+	/* The same for "Show audio meters on scene tiles" (the window menu). */
+	void set_tile_meters(bool on);
 
 	/* The global update check settings (defaults when nothing is saved). */
 	UpdateSettings updates();
@@ -102,6 +104,7 @@ private:
 	 * but was unreadable). */
 	void ensure_loaded();
 	void load();
+	void set_toggle(bool Appearance::*field, bool on);
 	void mark_dirty();
 	bool write_file();
 	std::string path() const;

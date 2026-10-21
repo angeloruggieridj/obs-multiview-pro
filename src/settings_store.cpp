@@ -190,15 +190,25 @@ void SettingsStore::preview_appearance(const Appearance &a)
 	emit appearance_changed(normalized(a));
 }
 
-void SettingsStore::set_always_on_top(bool on)
+void SettingsStore::set_toggle(bool Appearance::*field, bool on)
 {
 	Appearance a = appearance();
-	if (a.always_on_top != on) {
-		a.always_on_top = on;
+	if (a.*field != on) {
+		a.*field = on;
 		set_appearance(a);
 		return;
 	}
 	emit appearance_saved(a);
+}
+
+void SettingsStore::set_always_on_top(bool on)
+{
+	set_toggle(&Appearance::always_on_top, on);
+}
+
+void SettingsStore::set_tile_meters(bool on)
+{
+	set_toggle(&Appearance::tile_meters, on);
 }
 
 UpdateSettings SettingsStore::updates()

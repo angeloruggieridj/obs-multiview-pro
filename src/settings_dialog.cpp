@@ -41,6 +41,12 @@
 #include <QTextFragment>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QShowEvent>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <Windows.h>
+#endif
 
 #include <string>
 #include <utility>
@@ -158,13 +164,19 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	layout->addWidget(m_buttons);
 	setMinimumWidth(460);
 
-	/* "Always on top" can also be set from a window's menu: follow it. */
+	/* "Always on top" and the tile meters can also be set from a window's
+	 * menu: follow them. */
 	connect(&SettingsStore::instance(), &SettingsStore::appearance_saved, this,
-		[this](const Appearance &a) { follow_saved_on_top(a.always_on_top); });
+		[this](const Appearance &a) { follow_saved(a); });
+	/* What the windows show (saved, previewed or taken back): stay above them
+	 * while they are on top. */
+	connect(&SettingsStore::instance(), &SettingsStore::appearance_changed, this,
+		[this](const Appearance &a) { set_on_top(a.always_on_top); });
 	connect(&UpdateManager::instance(), &UpdateManager::state_changed, this, [this] { show_update_state(); });
 	connect(&UpdateManager::instance(), &UpdateManager::marker_changed, this, [this] { show_update_state(); });
 	reload();
 	show_update_state();
+	m_keep_on_top = m_saved.always_on_top;
 }
 
 void SettingsDialog::show_page(SettingsPage page)
@@ -238,6 +250,16 @@ QWidget *SettingsDialog::build_appearance_page()
 	};
 	add_percent(T("Dialog.Appearance.LabelOpacity"), m_label_slider, m_label_spin, &Appearance::label_opacity);
 	add_percent(T("Dialog.Appearance.MeterOpacity"), m_meter_slider, m_meter_spin, &Appearance::meter_opacity);
+
+	m_tile_meters = new QCheckBox(T("Dialog.Appearance.TileMeters"));
+	form->addRow(m_tile_meters);
+	connect(m_tile_meters, &QCheckBox::toggled, this, [this](bool on) {
+		if (m_updating)
+			return;
+		Appearance a = m_current;
+		a.tile_meters = on;
+		values_edited(a);
+	});
 
 	m_on_top = new QCheckBox(T("Dialog.Appearance.AlwaysOnTop"));
 	form->addRow(m_on_top);
@@ -428,6 +450,7 @@ void SettingsDialog::show_values(const Appearance &a, bool rewrite_hex)
 	m_meter_slider->setValue(m_current.meter_opacity);
 	m_meter_spin->setValue(m_current.meter_opacity);
 	m_on_top->setChecked(m_current.always_on_top);
+	m_tile_meters->setChecked(m_current.tile_meters);
 
 	const qreal dpr = devicePixelRatioF();
 	QPixmap pm(QSize(int(40 * dpr), int(14 * dpr)));
@@ -450,22 +473,68 @@ void SettingsDialog::values_edited(const Appearance &a, bool rewrite_hex)
 	m_preview_timer.start(); /* restarts: the preview follows the last change */
 }
 
-/* The saved "always on top" became `on` (set here or from a window's menu):
- * the box shows it, and a preview of other unsaved values stays on screen
- * with it. */
-void SettingsDialog::follow_saved_on_top(bool on)
+/* The saved toggles (always on top, tile meters) changed here or from a
+ * window's menu: the boxes show them, and a preview of other unsaved values
+ * stays on screen with them. The result is always sent to the windows: the
+ * store emits only appearance_saved when the saved value did not change, and
+ * the windows may still show a preview of the other value. */
+void SettingsDialog::follow_saved(const Appearance &saved)
 {
-	m_saved.always_on_top = on;
-	if (m_current.always_on_top != on) {
-		Appearance c = m_current;
-		c.always_on_top = on;
-		show_values(c);
-	}
-	if (m_current != m_saved) {
-		m_preview_timer.stop();
-		SettingsStore::instance().preview_appearance(m_current);
-	}
+	m_saved.always_on_top = saved.always_on_top;
+	m_saved.tile_meters = saved.tile_meters;
+	const Appearance shown = follow_saved_toggles(m_current, saved);
+	if (shown != m_current)
+		show_values(shown);
+	m_preview_timer.stop();
+	SettingsStore::instance().preview_appearance(m_current);
 	update_buttons();
+}
+
+void SettingsDialog::set_on_top(bool on)
+{
+	if (on == m_keep_on_top)
+		return;
+	m_keep_on_top = on;
+	apply_on_top();
+	/* A window that turned topmost in the same signal, after this slot, goes
+	 * to the top of the band: come back above it once the event is done. */
+	if (on)
+		QTimer::singleShot(0, this, [this] { apply_on_top(); });
+}
+
+void SettingsDialog::showEvent(QShowEvent *event)
+{
+	QDialog::showEvent(event);
+	apply_on_top();
+}
+
+void SettingsDialog::apply_on_top()
+{
+#if defined(_WIN32)
+	/* Only the z-order band of the existing native windows: no hide / show.
+	 * The colour chooser is owned by this dialog: it follows it, and is set
+	 * explicitly too. */
+	auto apply = [this](QWidget *w) {
+		if (!w || !w->isVisible())
+			return;
+		SetWindowPos(reinterpret_cast<HWND>(w->winId()), m_keep_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0,
+			     0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	};
+	apply(this);
+	apply(m_color_dialog.data());
+#else
+	/* A flag change re-creates the native window, hidden: show it again. */
+	auto apply = [this](QWidget *w) {
+		if (!w || w->windowFlags().testFlag(Qt::WindowStaysOnTopHint) == m_keep_on_top)
+			return;
+		const bool visible = w->isVisible();
+		w->setWindowFlag(Qt::WindowStaysOnTopHint, m_keep_on_top);
+		if (visible)
+			w->show();
+	};
+	apply(this);
+	apply(m_color_dialog.data());
+#endif
 }
 
 void SettingsDialog::pick_color()
@@ -491,6 +560,7 @@ void SettingsDialog::pick_color()
 		values_edited(a);
 	});
 	chooser->open();
+	apply_on_top(); /* above topmost windows too */
 }
 
 void SettingsDialog::apply()
