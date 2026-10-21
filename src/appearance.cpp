@@ -14,6 +14,7 @@ Appearance normalized(const Appearance &a)
 	out.border_rgb = a.border_rgb & 0xFFFFFFu;
 	out.label_opacity = clamp_percent(a.label_opacity);
 	out.meter_opacity = clamp_percent(a.meter_opacity);
+	out.always_on_top = a.always_on_top;
 	return out;
 }
 

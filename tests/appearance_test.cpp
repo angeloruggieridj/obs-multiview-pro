@@ -11,6 +11,7 @@ TEST_CASE("appearance_defaults_match_the_native_look")
 	CHECK(a.border_rgb == 0x999999u);
 	CHECK(a.label_opacity == 50);
 	CHECK(a.meter_opacity == 100);
+	CHECK_FALSE(a.always_on_top);
 	CHECK(a == Appearance());
 	CHECK(border_argb(a) == 0xFF999999u);
 	/* Native label: text alpha 50 * 255 / 100 = 127, box 0x33000000. */
@@ -100,4 +101,14 @@ TEST_CASE("appearance_normalized")
 	CHECK(n.label_opacity == 100);
 	CHECK(n.meter_opacity == 0);
 	CHECK(n != a);
+}
+
+TEST_CASE("appearance_always_on_top")
+{
+	Appearance a;
+	a.always_on_top = true;
+	CHECK(a != Appearance()); /* part of equality: a toggle is a change to save */
+	CHECK(normalized(a).always_on_top); /* kept as it is */
+	a.always_on_top = false;
+	CHECK(a == Appearance());
 }

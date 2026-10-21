@@ -11,6 +11,8 @@
 //    look (white text at alpha 127 over a 0x33 black box).
 //  - meter_opacity: 0..100 %, a multiplier for everything the audio meters
 //    draw. 100 is the native look.
+//  - always_on_top: the multiview windows stay above other windows. Off by
+//    default. Not a look, but set in the same tab and saved the same way.
 
 #include <cstdint>
 #include <string>
@@ -23,11 +25,12 @@ struct Appearance {
 	uint32_t border_rgb = kDefaultBorderRgb; /* 0xRRGGBB */
 	int label_opacity = kDefaultLabelOpacity;
 	int meter_opacity = kDefaultMeterOpacity;
+	bool always_on_top = false;
 
 	bool operator==(const Appearance &o) const
 	{
 		return border_rgb == o.border_rgb && label_opacity == o.label_opacity &&
-		       meter_opacity == o.meter_opacity;
+		       meter_opacity == o.meter_opacity && always_on_top == o.always_on_top;
 	}
 	bool operator!=(const Appearance &o) const { return !(*this == o); }
 };

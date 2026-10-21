@@ -583,6 +583,62 @@ TEST_CASE("state_settings_appearance_number_rounding")
 	CHECK(label("100") == 100);
 }
 
+TEST_CASE("state_settings_always_on_top_roundtrip")
+{
+	SettingsFile f;
+	f.appearance = custom_appearance();
+	f.appearance.always_on_top = true;
+	f.instances[0] = sample();
+	ParseStatus st = ParseStatus::Corrupt;
+	const std::string json = to_json(f);
+	CHECK(json.find("\"always_on_top\": true") != std::string::npos);
+	const SettingsFile back = from_json(json, &st);
+	CHECK(st == ParseStatus::Ok);
+	CHECK(back.appearance.always_on_top);
+	CHECK(back == f);
+	CHECK(to_json(back) == json);
+	/* the default is written too */
+	CHECK(to_json(SettingsFile()).find("\"always_on_top\": false") != std::string::npos);
+	CHECK_FALSE(from_json(to_json(SettingsFile())).appearance.always_on_top);
+}
+
+TEST_CASE("state_settings_always_on_top_old_files_and_hostile_values")
+{
+	auto load = [](const std::string &body) {
+		ParseStatus st = ParseStatus::Corrupt;
+		INFO("body: " << body);
+		const SettingsFile f = from_json("{\"version\":1,\"global\":{\"appearance\":{" + body + "}}}", &st);
+		CHECK(st == ParseStatus::Ok);
+		return f.appearance;
+	};
+	/* a 1.0.0 file: no key -> off, the other values kept */
+	const Appearance old = load("\"border_color\":\"#336699\",\"label_opacity\":20,\"meter_opacity\":40");
+	CHECK_FALSE(old.always_on_top);
+	CHECK(old == custom_appearance());
+	CHECK(load("\"always_on_top\":true").always_on_top);
+	CHECK_FALSE(load("\"always_on_top\":false").always_on_top);
+	for (const char *bad : {"\"true\"", "1", "0", "null", "[true]", "{\"on\":true}", "\"\"", "1e999"})
+		CHECK_FALSE(load(std::string("\"always_on_top\":") + bad).always_on_top);
+	/* a bad value does not disturb the others */
+	const Appearance mixed = load("\"always_on_top\":\"yes\",\"label_opacity\":20");
+	CHECK_FALSE(mixed.always_on_top);
+	CHECK(mixed.label_opacity == 20);
+	/* duplicates: the last one wins */
+	CHECK_FALSE(load("\"always_on_top\":true,\"always_on_top\":false").always_on_top);
+	CHECK(load("\"always_on_top\":false,\"always_on_top\":true").always_on_top);
+}
+
+TEST_CASE("state_settings_merge_always_on_top_touched_vs_untouched")
+{
+	SettingsFile base;
+	base.appearance.always_on_top = true;
+	SettingsFile over; /* default: off */
+	merge_settings(base, over, false);
+	CHECK(base.appearance.always_on_top); /* not touched: the file's value stays */
+	merge_settings(base, over, true);
+	CHECK_FALSE(base.appearance.always_on_top);
+}
+
 /* ---- Update check settings ------------------------------------------------------ */
 
 static UpdateSettings custom_updates()

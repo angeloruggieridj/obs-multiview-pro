@@ -568,6 +568,10 @@ Appearance appearance_from_value(const JValue &obj)
 	}
 	a.label_opacity = percent_from_value(obj.find("label_opacity"), a.label_opacity);
 	a.meter_opacity = percent_from_value(obj.find("meter_opacity"), a.meter_opacity);
+	/* Only a JSON true / false; anything else (also a missing key: files of
+	 * 1.0.0) keeps the default, off. */
+	if (const JValue *v = obj.find("always_on_top"); v && v->type == JValue::Bool)
+		a.always_on_top = v->b;
 	return a;
 }
 
@@ -648,7 +652,8 @@ std::string to_json(const SettingsFile &file)
 	std::string out = "{\n  \"version\": 1,\n  \"global\": {\n    \"appearance\": {\n";
 	out += "      \"border_color\": \"" + format_color(app.border_rgb) + "\",\n";
 	out += "      \"label_opacity\": " + std::to_string(app.label_opacity) + ",\n";
-	out += "      \"meter_opacity\": " + std::to_string(app.meter_opacity) + "\n";
+	out += "      \"meter_opacity\": " + std::to_string(app.meter_opacity) + ",\n";
+	out += std::string("      \"always_on_top\": ") + (app.always_on_top ? "true" : "false") + "\n";
 	out += "    },\n    \"updates\": {\n";
 	const UpdateSettings &up = file.updates;
 	out += std::string("      \"auto_check\": ") + (up.auto_check ? "true" : "false") + ",\n";
