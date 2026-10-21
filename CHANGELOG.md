@@ -1,10 +1,12 @@
 # Changelog
 
-## 1.0.1
+## 1.1.0
 
-- Mixer tile lists the audio sources of the program scene (and of the preview scene in studio mode) next to the global devices.
-- Mixer tile: at most 7 sources beside PGM; the others are left out and noted in the OBS log.
-- Option to keep the multiview window always on top (Settings, and the window menu).
+- Audio meters on every scene tile: thin L/R bars with the loudest audio source of the scene (Settings and the window menu, on by default).
+- One volmeter per audio source, shared by the scene tiles, the preview meter and the mixer; at most 128 per window, the others noted in the OBS log.
+- Mixer tile lists the audio sources of the program scene (and of the preview scene in studio mode) next to the global devices; at most 7 sources beside PGM, the others noted in the OBS log.
+- Mixer columns keep their place and peak hold across transitions.
+- Option to keep the multiview windows always on top (Settings and the window menu); the settings dialog stays above them.
 
 ## 1.0.0
 

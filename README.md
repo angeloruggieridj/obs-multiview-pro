@@ -35,7 +35,7 @@
 ### Features
 
 - **Native look**: same tiles, outlines, safe areas and scene names as the built-in multiview; every scene drawn each frame.
-- **Audio**: stereo meters with dB scale on program and preview; a mixer tile with the audio sources of the program scene (and of the preview scene in studio mode) and the global audio devices.
+- **Audio**: stereo meters with dB scale on program and preview; thin L/R meters on every scene tile (the loudest audio source of the scene); a mixer tile with the audio sources of the program scene (and of the preview scene in studio mode) and the global audio devices.
 - **Status tiles**: ON AIR (time, bitrate, dropped frames, connection, service), REC (time, file, size), clock.
 - **Editing in place**: click, double-click, drag to swap, right-click menu, click a tile name to pick its scene.
 - **Remembers** preset, options and tile assignments per window and per scene collection.
@@ -72,7 +72,7 @@ Open **Tools → Multiview** (several windows are allowed), then right-click the
 | Click a scene tile | Studio mode: set preview. Otherwise: set program |
 | Double-click (studio mode) | Preview, then transition to program |
 | Drag a tile onto another | Swap the two scenes |
-| Right-click | Layout, assign/remove scene, meters, safe areas, always on top, settings |
+| Right-click | Layout, assign/remove scene, meters, meters on scene tiles, safe areas, always on top, settings |
 | Click a tile name | Choose the scene for that tile |
 
 Scenes with *Show in Multiview* off are skipped, like the native multiview.
@@ -81,7 +81,7 @@ Scenes with *Show in Multiview* off are skipped, like the native multiview.
 
 **Tools → Multiview Settings...** (or right-click → *Settings...*):
 
-- **Appearance**: border colour (the frame under the tiles), label opacity (default 50 %, 0 hides labels and the click-on-name menu), meter opacity (default 100 %), window always on top (default off). Changes show live in every window.
+- **Appearance**: border colour (the frame under the tiles), label opacity (default 50 %, 0 hides labels and the click-on-name menu), meter opacity (default 100 %), audio meters on the scene tiles (default on, shown where the window's meters are on), multiview windows always on top (default off; the settings dialog stays above them). Changes show live in every window.
 - **Updates**: *Check for updates* now, or automatically once a day (on by default, never while streaming or recording). A newer version shows its change log and *Open download page*; *Skip this version* stops the reminder. An automatic check never opens a window: it adds a log line and an *Update available* menu entry.
 - **Privacy**: a check is one HTTPS request to `api.github.com`, sending only the plugin version in the User-Agent (GitHub sees your IP, as for any connection). Nothing is downloaded or installed. To turn it off clear *Check for updates automatically*. Details in [SECURITY.md](SECURITY.md).
 
@@ -89,9 +89,10 @@ Scenes with *Show in Multiview* off are skipped, like the native multiview.
 
 - Runtime-tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds compile and pass the unit tests on CI but have never been run: reports are welcome.
 - Linux under Wayland: the window stays empty (needs Qt 6.9, the build uses 6.4). Start OBS with `QT_QPA_PLATFORM=xcb`.
-- Meters: program follows the program mix (track 1); preview follows the audio sources of the preview scene; media set to *Restart when activated* are silent off air. No meters on the other scene tiles.
+- Meters: program follows the program mix (track 1); preview and scene tiles show the loudest audio source of their scene (post-fader; the audio sources the OBS mixer lists for a scene, plus those of nested scenes and groups). A scene has no audio of its own: sources that only play on air (media set to *Restart when activated*) stay silent off air. At most 128 metered sources per window (mixer, preview, then tiles in order); the rest are noted in the OBS log.
 - Mixer tile: at most 7 sources beside PGM (global devices first, then the program scene, then the preview scene); the rest are left out and noted in the OBS log.
 - *CACHE* shows the output congestion (OBS has no cache indicator). No NDI state tile.
+- With *always on top*, OBS's own dialogs (properties, settings) can open behind the multiview, as with OBS's projectors kept on top.
 
 ### Build from source
 
@@ -118,7 +119,7 @@ GPL-2.0-or-later, see [LICENSE](LICENSE).
 ### Funzionalità
 
 - **Aspetto nativo**: stessi riquadri, contorni, margini di sicurezza e nomi delle scene della vista multipla di OBS; ogni scena è aggiornata a ogni frame.
-- **Audio**: meter stereo con scala in dB su programma e anteprima; un riquadro mixer con le sorgenti audio della scena in programma (e di quella in anteprima in modalità studio) e i dispositivi audio globali.
+- **Audio**: meter stereo con scala in dB su programma e anteprima; meter sottili L/R su ogni riquadro scena (la sorgente audio più forte della scena); un riquadro mixer con le sorgenti audio della scena in programma (e di quella in anteprima in modalità studio) e i dispositivi audio globali.
 - **Riquadri di stato**: IN ONDA (tempo, bitrate, frame persi, connessione, servizio), REC (tempo, file, dimensione), orologio.
 - **Modifica sul posto**: clic, doppio clic, trascinamento per scambiare, menu col tasto destro, clic sul nome per scegliere la scena.
 - **Ricorda** preset, opzioni e assegnazioni per finestra e per collezione di scene.
@@ -153,7 +154,7 @@ Apri **Strumenti → Multiview** (puoi aprire più finestre), poi clicca col tas
 | Clic su un riquadro scena | Modalità studio: imposta l'anteprima. Altrimenti: imposta il programma |
 | Doppio clic (modalità studio) | Anteprima, poi transizione al programma |
 | Trascina un riquadro su un altro | Scambia le due scene |
-| Tasto destro | Layout, assegna/rimuovi scena, meter, margini di sicurezza, sempre in primo piano, impostazioni |
+| Tasto destro | Layout, assegna/rimuovi scena, meter, meter sui riquadri delle scene, margini di sicurezza, sempre in primo piano, impostazioni |
 | Clic sul nome di un riquadro | Sceglie la scena di quel riquadro |
 
 Le scene con *Mostra in Vista multipla* disattivato vengono saltate, come nella vista multipla di OBS.
@@ -162,17 +163,18 @@ Le scene con *Mostra in Vista multipla* disattivato vengono saltate, come nella 
 
 **Strumenti → Impostazioni Multiview…** (o tasto destro → *Impostazioni…*):
 
-- **Aspetto**: colore del bordo (la cornice sotto i riquadri), opacità delle etichette (predefinita 50%; con 0 le etichette spariscono e non si può più cliccare sul nome), opacità dei meter (predefinita 100%), finestra sempre in primo piano (disattivata di default). Le modifiche si vedono subito in tutte le finestre.
-- **Aggiornamenti**: *Controlla aggiornamenti* subito, oppure in automatico una volta al giorno (attivo di default, mai durante una diretta o una registrazione). Se c'è una versione nuova compaiono le novità e *Apri pagina di download*; *Salta questa versione* sospende l'avviso. Il controllo automatico non apre mai finestre: scrive una riga nel log e aggiunge la voce *Aggiornamento disponibile* al menu.
+- **Aspetto**: colore del bordo (la cornice sotto i riquadri), opacità delle etichette (predefinita 50%; con 0 le etichette spariscono e non si può più cliccare sul nome), opacità dei meter (predefinita 100%), meter audio sui riquadri delle scene (attivi per impostazione predefinita, visibili dove i meter della finestra sono accesi), finestre Multiview sempre in primo piano (disattivate per impostazione predefinita; la finestra delle impostazioni resta sopra di loro). Le modifiche si vedono subito in tutte le finestre.
+- **Aggiornamenti**: *Controlla aggiornamenti* subito, oppure in automatico una volta al giorno (attivo per impostazione predefinita, mai durante una diretta o una registrazione). Se c'è una versione nuova compaiono le novità e *Apri pagina di download*; *Salta questa versione* sospende l'avviso. Il controllo automatico non apre mai finestre: scrive una riga nel log e aggiunge la voce *Aggiornamento disponibile* al menu.
 - **Privacy**: ogni controllo è una sola richiesta HTTPS ad `api.github.com` che invia solo la versione del plugin nello User-Agent (GitHub vede il tuo IP, come in ogni connessione). Il plugin non scarica né installa nulla. Per disattivarlo togli la spunta a *Controlla gli aggiornamenti automaticamente*. Dettagli in [SECURITY.md](SECURITY.md).
 
 ### Limiti
 
 - Provato in esecuzione solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux compilano e passano i test unitari in CI ma non sono mai state avviate: le segnalazioni sono benvenute.
 - Linux con Wayland: la finestra resta vuota (serve Qt 6.9, la build usa la 6.4). Avvia OBS con `QT_QPA_PLATFORM=xcb`.
-- Meter: il programma segue il mix del programma (traccia 1); l'anteprima segue le sorgenti audio della scena in anteprima; i file multimediali con *Riavvia la riproduzione quando la fonte torna attiva* restano muti fuori onda. Gli altri riquadri scena non hanno meter.
+- Meter: il programma segue il mix del programma (traccia 1); l'anteprima e i riquadri scena mostrano la sorgente audio più forte della loro scena (dopo il fader; le sorgenti audio che il mixer di OBS elenca per una scena, più quelle delle scene annidate e dei gruppi). Una scena non ha audio proprio: le sorgenti che suonano solo in onda (file multimediali con *Riavvia la riproduzione quando la fonte torna attiva*) restano mute fuori onda. Al massimo 128 sorgenti con meter per finestra (mixer, anteprima, poi i riquadri in ordine); le altre sono segnalate nel log di OBS.
 - Riquadro mixer: al massimo 7 sorgenti oltre a PGM (prima i dispositivi globali, poi la scena in programma, poi quella in anteprima); le altre restano fuori e il log di OBS lo segnala.
 - *CACHE* mostra la congestione dell'uscita (OBS non ha un indicatore di cache). Nessun riquadro per lo stato NDI.
+- Con *sempre in primo piano* le finestre di OBS (proprietà, impostazioni) possono aprirsi dietro la vista multipla, come con i proiettori di OBS tenuti in primo piano.
 
 ### Compilare dai sorgenti
 
