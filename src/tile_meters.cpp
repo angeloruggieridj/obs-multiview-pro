@@ -58,7 +58,7 @@ TileMeterGeometry tile_meter_geometry(const RectF &t, float px)
 	const float h = t.h;
 	const float margin = h * 0.04f;
 	const float bar_w = std::max(kTileMeterMinBarPx / px, h * 0.022f);
-	const float gap = std::max(1.f / px, bar_w * 0.15f);
+	const float gap = std::max(kTileMeterMinGapPx / px, bar_w * 0.15f);
 	const float pad = margin * 0.5f;
 
 	const float col_x = t.x + margin;

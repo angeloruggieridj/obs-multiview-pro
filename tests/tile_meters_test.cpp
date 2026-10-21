@@ -143,8 +143,9 @@ TEST_CASE("tile_meters_geometry_normal_tile")
 
 TEST_CASE("tile_meters_geometry_scales_with_the_tile")
 {
-	const RectF small = {100.f, 50.f, 800.f, 450.f};
-	const RectF big = {100.f, 50.f, 1600.f, 900.f};
+	/* large enough that no minimum (bar width, gap) applies */
+	const RectF small = {100.f, 50.f, 1000.f, 600.f};
+	const RectF big = {100.f, 50.f, 2000.f, 1200.f};
 	const TileMeterGeometry a = tile_meter_geometry(small, 1.f);
 	const TileMeterGeometry b = tile_meter_geometry(big, 1.f);
 	REQUIRE(a.shown);
@@ -164,7 +165,8 @@ TEST_CASE("tile_meters_geometry_minimum_bar_width_in_device_pixels")
 	REQUIRE(g.shown);
 	CHECK(g.bar[0].w * px >= 2.f - 1e-4f);
 	CHECK(g.bar[1].w * px >= 2.f - 1e-4f);
-	CHECK(g.bar[1].x - (g.bar[0].x + g.bar[0].w) > 0.f); /* a gap between L and R */
+	/* a gap between L and R that survives the rounding to pixels */
+	CHECK((g.bar[1].x - (g.bar[0].x + g.bar[0].w)) * px >= kTileMeterMinGapPx - 1e-4f);
 	CHECK(inside(g.column, inner));
 }
 

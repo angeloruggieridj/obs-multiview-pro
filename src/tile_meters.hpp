@@ -51,6 +51,8 @@ constexpr float kTileMeterMinPx = 48.f;
 constexpr float kTileMeterMinWidthPx = 64.f;
 /* Narrowest bar, in device pixels. */
 constexpr float kTileMeterMinBarPx = 2.f;
+/* Narrowest gap between L and R, in device pixels (one pixel can round away). */
+constexpr float kTileMeterMinGapPx = 1.5f;
 
 struct TileMeterGeometry {
 	bool shown = false;
@@ -62,7 +64,7 @@ struct TileMeterGeometry {
  * `inner` (the tile's picture area); `px_per_unit` is the number of device
  * pixels per unit (the display scale). Proportional to the tile height like
  * the Preview meter (each bar 2.2 % of it, margins 4 %), each bar at least
- * kTileMeterMinBarPx device pixels wide. Not shown for a tile smaller than
+ * kTileMeterMinBarPx device pixels wide and kTileMeterMinGapPx apart. Not shown for a tile smaller than
  * kTileMeterMinPx x kTileMeterMinWidthPx device pixels or degenerate input
  * (non-positive, NaN or infinite). */
 TileMeterGeometry tile_meter_geometry(const RectF &inner, float px_per_unit);
