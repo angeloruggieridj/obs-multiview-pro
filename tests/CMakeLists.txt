@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
 add_executable(
   unit_tests
   smoke_test.cpp
