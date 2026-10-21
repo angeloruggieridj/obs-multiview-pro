@@ -39,10 +39,13 @@
  * it finds that instance's saved settings.
  *
  * Appearance: one global section of the same file (colour of the frame under
- * the tiles, label and meter opacity), shared by every window. Windows read it
- * at construction and listen to appearance_changed() to follow changes live;
- * the signal is emitted on the UI thread only, by set_appearance() (saved) and
- * preview_appearance() (not saved, for the settings dialog).
+ * the tiles, label and meter opacity, "always on top"), shared by every
+ * window. Windows read it at construction and listen to appearance_changed()
+ * to follow changes live; the signal is emitted on the UI thread only, by
+ * set_appearance() (saved) and preview_appearance() (not saved, for the
+ * settings dialog). appearance_saved() follows only a saved change, so the
+ * dialog can follow a change made elsewhere (the window menu's "Always on
+ * top").
  *
  * Updates: another global section (automatic check on/off, pre-releases,
  * time of the last attempt, last version seen, skipped version), used by
@@ -66,11 +69,16 @@ public:
 	/* The saved appearance (defaults when nothing is saved). */
 	Appearance appearance();
 	/* Stores `a` (normalized), schedules the write and emits
-	 * appearance_changed. No-op when nothing changes. */
+	 * appearance_changed, then appearance_saved. No-op when nothing changes. */
 	void set_appearance(const Appearance &a);
 	/* Emits appearance_changed(a) without saving: a preview in the open
 	 * windows. Calling it with appearance() takes the preview back. */
 	void preview_appearance(const Appearance &a);
+	/* Saves the "always on top" option alone (the window menu), keeping the
+	 * other saved values. appearance_saved is emitted even when the saved
+	 * value does not change, so an open settings dialog drops a preview of
+	 * the other value. */
+	void set_always_on_top(bool on);
 
 	/* The global update check settings (defaults when nothing is saved). */
 	UpdateSettings updates();
@@ -82,6 +90,9 @@ public:
 
 signals:
 	void appearance_changed(const Appearance &appearance);
+	/* After appearance_changed, when the saved value changed (and from
+	 * set_always_on_top). */
+	void appearance_saved(const Appearance &appearance);
 
 private:
 	SettingsStore();

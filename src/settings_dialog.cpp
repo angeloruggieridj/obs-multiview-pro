@@ -158,6 +158,9 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 	layout->addWidget(m_buttons);
 	setMinimumWidth(460);
 
+	/* "Always on top" can also be set from a window's menu: follow it. */
+	connect(&SettingsStore::instance(), &SettingsStore::appearance_saved, this,
+		[this](const Appearance &a) { follow_saved_on_top(a.always_on_top); });
 	connect(&UpdateManager::instance(), &UpdateManager::state_changed, this, [this] { show_update_state(); });
 	connect(&UpdateManager::instance(), &UpdateManager::marker_changed, this, [this] { show_update_state(); });
 	reload();
@@ -235,6 +238,16 @@ QWidget *SettingsDialog::build_appearance_page()
 	};
 	add_percent(T("Dialog.Appearance.LabelOpacity"), m_label_slider, m_label_spin, &Appearance::label_opacity);
 	add_percent(T("Dialog.Appearance.MeterOpacity"), m_meter_slider, m_meter_spin, &Appearance::meter_opacity);
+
+	m_on_top = new QCheckBox(T("Dialog.Appearance.AlwaysOnTop"));
+	form->addRow(m_on_top);
+	connect(m_on_top, &QCheckBox::toggled, this, [this](bool on) {
+		if (m_updating)
+			return;
+		Appearance a = m_current;
+		a.always_on_top = on;
+		values_edited(a);
+	});
 
 	auto *hint = new QLabel(T("Dialog.Appearance.Hint"));
 	hint->setWordWrap(true);
@@ -414,6 +427,7 @@ void SettingsDialog::show_values(const Appearance &a, bool rewrite_hex)
 	m_label_spin->setValue(m_current.label_opacity);
 	m_meter_slider->setValue(m_current.meter_opacity);
 	m_meter_spin->setValue(m_current.meter_opacity);
+	m_on_top->setChecked(m_current.always_on_top);
 
 	const qreal dpr = devicePixelRatioF();
 	QPixmap pm(QSize(int(40 * dpr), int(14 * dpr)));
@@ -434,6 +448,24 @@ void SettingsDialog::values_edited(const Appearance &a, bool rewrite_hex)
 {
 	show_values(a, rewrite_hex);
 	m_preview_timer.start(); /* restarts: the preview follows the last change */
+}
+
+/* The saved "always on top" became `on` (set here or from a window's menu):
+ * the box shows it, and a preview of other unsaved values stays on screen
+ * with it. */
+void SettingsDialog::follow_saved_on_top(bool on)
+{
+	m_saved.always_on_top = on;
+	if (m_current.always_on_top != on) {
+		Appearance c = m_current;
+		c.always_on_top = on;
+		show_values(c);
+	}
+	if (m_current != m_saved) {
+		m_preview_timer.stop();
+		SettingsStore::instance().preview_appearance(m_current);
+	}
+	update_buttons();
 }
 
 void SettingsDialog::pick_color()

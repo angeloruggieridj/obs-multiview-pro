@@ -98,8 +98,10 @@ void SettingsStore::load()
 			m_file = std::move(parsed);
 			m_blocked = false;
 			/* A file that could not be read at first may hold other values. */
-			if (normalized(m_file.appearance) != before)
+			if (normalized(m_file.appearance) != before) {
 				emit appearance_changed(normalized(m_file.appearance));
+				emit appearance_saved(normalized(m_file.appearance));
+			}
 		}
 		return;
 	case LoadAction::BlockWrites:
@@ -180,11 +182,23 @@ void SettingsStore::set_appearance(const Appearance &a)
 	m_appearance_touched = true;
 	mark_dirty();
 	emit appearance_changed(n);
+	emit appearance_saved(n);
 }
 
 void SettingsStore::preview_appearance(const Appearance &a)
 {
 	emit appearance_changed(normalized(a));
+}
+
+void SettingsStore::set_always_on_top(bool on)
+{
+	Appearance a = appearance();
+	if (a.always_on_top != on) {
+		a.always_on_top = on;
+		set_appearance(a);
+		return;
+	}
+	emit appearance_saved(a);
 }
 
 UpdateSettings SettingsStore::updates()

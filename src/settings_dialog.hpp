@@ -23,7 +23,7 @@ class QDialogButtonBox;
 enum class SettingsPage { Keep, Appearance, Updates, About };
 
 /* The plugin settings: an "Appearance" tab (frame colour under the tiles,
- * label opacity, meter opacity), an "Updates" tab (installed version, check
+ * label opacity, meter opacity, windows always on top), an "Updates" tab (installed version, check
  * now, automatic check and pre-release options, change log of the newer
  * releases, download page, skip) and an "About" tab.
  *
@@ -63,6 +63,7 @@ private:
 	void show_values(const Appearance &a, bool rewrite_hex = true);
 	/* The user changed a value: show it and preview it in the windows. */
 	void values_edited(const Appearance &a, bool rewrite_hex = true);
+	void follow_saved_on_top(bool on);
 	void pick_color();
 	void apply();
 	void update_buttons();
@@ -85,6 +86,7 @@ private:
 	QSpinBox *m_label_spin = nullptr;
 	QSlider *m_meter_slider = nullptr;
 	QSpinBox *m_meter_spin = nullptr;
+	QCheckBox *m_on_top = nullptr;
 	QDialogButtonBox *m_buttons = nullptr;
 
 	QTabWidget *m_tabs = nullptr;
