@@ -18,6 +18,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -30,12 +31,19 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QTabWidget>
+#include <QByteArray>
+#include <QTextBlock>
 #include <QTextBrowser>
+#include <QTextCursor>
 #include <QTextDocument>
+#include <QTextFormat>
+#include <QTextFragment>
 #include <QUrl>
 #include <QVBoxLayout>
 
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -57,14 +65,49 @@ constexpr const char *kReleaseTagUrl = "https://github.com/angeloruggieridj/obs-
 
 /* Release notes come from the network: nothing they reference is ever loaded
  * (images, style sheets, other documents), and links are only reported
- * through anchorClicked, never followed by the widget. */
+ * through anchorClicked, never followed by the widget.
+ *
+ * loadResource answers every request with a NON-null value. Qt falls back to
+ * loading the name itself when it gets nothing usable: QTextDocument opens it
+ * as a local file after a null QVariant, and the image handler calls
+ * QImage::load(name) after an empty or undecodable image. A "//host/x.png" or
+ * "file://host/x.png" name then becomes a UNC path: an SMB connection made
+ * synchronously on the UI thread (measured: about 10 s with a local probe).
+ * Images get a 1x1 transparent QImage, everything else an empty byte array. */
 class OfflineTextBrowser : public QTextBrowser {
 public:
 	using QTextBrowser::QTextBrowser;
 
 protected:
-	QVariant loadResource(int, const QUrl &) override { return QVariant(); }
+	QVariant loadResource(int type, const QUrl &) override
+	{
+		if (type == QTextDocument::ImageResource) {
+			QImage blank(1, 1, QImage::Format_ARGB32);
+			blank.fill(Qt::transparent);
+			return QVariant(blank);
+		}
+		return QVariant(QByteArray());
+	}
 };
+
+/* Removes every image from `doc` (belt and braces: the notes were already
+ * stripped of image syntax, see strip_markdown_images). */
+void remove_images(QTextDocument *doc)
+{
+	std::vector<std::pair<int, int>> spans; /* position, length */
+	for (QTextBlock block = doc->begin(); block.isValid(); block = block.next())
+		for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+			const QTextFragment f = it.fragment();
+			if (f.isValid() && f.charFormat().isImageFormat())
+				spans.emplace_back(f.position(), f.length());
+		}
+	for (auto it = spans.rbegin(); it != spans.rend(); ++it) {
+		QTextCursor c(doc);
+		c.setPosition(it->first);
+		c.setPosition(it->first + it->second, QTextCursor::KeepAnchor);
+		c.removeSelectedText();
+	}
+}
 
 /* Opens `url` in the browser only when it is a page of this project. */
 void open_release_url(const std::string &url)
@@ -318,11 +361,12 @@ void SettingsDialog::show_update_state()
 	m_check_now->setEnabled(!m.busy());
 	m_open_page->setEnabled(can_open);
 	m_skip->setEnabled(can_skip);
-	/* Raw HTML in the notes stays text; images were stripped and
-	 * OfflineTextBrowser loads no resource anyway. */
+	/* Raw HTML in the notes stays text; image syntax was stripped, any image
+	 * left is removed, and OfflineTextBrowser loads no resource anyway. */
 	m_changelog->document()->setMarkdown(QString::fromStdString(markdown),
 					     QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub |
 									     QTextDocument::MarkdownNoHTML));
+	remove_images(m_changelog->document());
 }
 
 QWidget *SettingsDialog::build_about_page()
