@@ -49,21 +49,13 @@ Da controllare al primo tag:
 4. La bozza viene creata, riceve i 4 asset, il controllo dei nomi passa e la release diventa pubblica. `gh release view <tag>` deve trovare anche una bozza (gh cerca le bozze per nome del tag); se non la trova, un secondo run creerebbe una seconda bozza: in quel caso eliminare la bozza a mano.
 5. Ubuntu: `libcurl4-openssl-dev` installato da apt e trovato da `find_package(CURL)`; macOS: `find_package(CURL)` trova la libcurl dell'SDK (come fa OBS stesso) o quella di obs-deps se presente, universale arm64+x86_64.
 
-## Stato: mai eseguito
+## Stato e aree mai eseguite
 
-Il workflow non e' mai girato. Serve che il progetto sia in un repository GitHub (da creare e pubblicare a cura dell'utente); finche' non c'e', nulla lo esegue. Prima della consegna e' stato solo controllato a mano: struttura YAML, nomi dei preset (esistono tutti in `CMakePresets.json`), shell per runner (pwsh su Windows, bash altrove). La build Windows locale e' stata rifatta con `CMAKE_COMPILE_WARNING_AS_ERROR=ON` (stesso `-Werror` della CI): passa, `ctest` 3/3.
+`build.yml` compila e lancia i test unitari su Windows, macOS e Ubuntu a ogni push. I test non richiedono OBS ne' Qt: **solo Windows 11 con OBS 32.2 e' stato provato in esecuzione**. Su macOS e Linux il plugin e' compilato (con `-Werror`) ma non e' mai stato avviato dentro OBS.
 
-## Da controllare al primo run
-
-1. Windows: la configure trova VS 2022 e un Windows SDK >= 10.0.20348; il download delle dipendenze (qlalr reale incluso) va a buon fine.
-2. macOS: Xcode del runner >= 16.0 (richiesto da `cmake/macos/compilerconfig.cmake`); se `macos-15` ha un Xcode diverso, aggiungere un `sudo xcode-select --switch /Applications/Xcode_<versione>.app/Contents/Developer` prima della configure. Il bundle e' firmato solo ad-hoc.
-3. Ubuntu: il PPA fornisce libobs 32.x (`find_package(libobs)`) e `OBS::obs-frontend-api`; Qt di Ubuntu 24.04 e' 6.4 (non 6.8).
-4. Leggere i log di warning: con `-Werror` il primo errore su macOS/Linux e' probabilmente un warning clang/gcc mai visto (MSVC e' meno severo).
-5. Scaricare gli artifact e verificare che il contenuto sia quello atteso (un solo `.dll`/`.plugin`/`.so`).
-
-## Aree non verificate (mai compilate fuori da Windows)
-
-- Blocchi di creazione display in `src/multiview_window.cpp`: macOS (`gs_window.view = (id)winId()`, Metal) e Linux X11 (`gs_window.id` + `obs_get_nix_platform_display()`, OpenGL). Wayland funziona solo con Qt >= 6.9; con Qt 6.4 del PPA il plugin scrive un avviso nel log e la finestra resta vuota (usare `QT_QPA_PLATFORM=xcb`).
+- Creazione del display in `src/multiview_window.cpp`: macOS (`gs_window.view = (id)winId()`, Metal) e Linux X11 (`gs_window.id` + `obs_get_nix_platform_display()`, OpenGL). Wayland funziona solo con Qt >= 6.9; la release per Ubuntu usa Qt 6.4, quindi sotto Wayland la finestra resta vuota (avviare OBS con `QT_QPA_PLATFORM=xcb`).
 - Font dei testi (`Helvetica` su macOS, `Monospace`/`Sans Serif` su Linux): le metriche delle etichette possono differire da Windows.
-- Rendering con effetti/texture su Metal e OpenGL: solo Direct3D 11 e' stato provato.
-- Warning clang (`-Wsign-compare`, `-Wcomma`, `-Wmove`, `-Wunused-parameter`...) e gcc (`-Wextra`) trattati come errori: verificati solo per lettura del codice.
+- Rendering su Metal e OpenGL: solo Direct3D 11 e' stato provato.
+- Verifica aggiornamenti: libcurl di sistema su macOS e Linux, mai eseguita.
+
+Se qualcosa si rompe in CI: con `-Werror` il primo errore su macOS/Linux e' di solito un warning clang/gcc (MSVC e' meno severo). Su macOS il job richiede Xcode >= 16.0 (`cmake/macos/compilerconfig.cmake`). Il file `cmake/macos/enable-swift.cmake` serve finche' si compila con i sorgenti di OBS 32.1 (OBS 32.2 abilita Swift da solo).

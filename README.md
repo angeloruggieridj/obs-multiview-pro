@@ -9,7 +9,8 @@
 [![Build](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml/badge.svg)](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml)
 ![License](https://img.shields.io/badge/license-GPL%20v2%2B-blue)
 ![OBS Studio](https://img.shields.io/badge/OBS%20Studio-32.1%2B-302E31)
-![Status](https://img.shields.io/badge/status-alpha-orange)
+[![Release](https://img.shields.io/github/v/release/angeloruggieridj/obs-multiview-pro)](https://github.com/angeloruggieridj/obs-multiview-pro/releases/latest)
+![Tested](https://img.shields.io/badge/runtime%20tested-Windows%2011-informational)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 <p align="center"><img src="docs/images/02-status8.png" alt="Multiview Pro with ON AIR, REC, clock and mixer tiles" width="860"></p>
@@ -22,6 +23,13 @@
 </p>
 
 *Left: scenes-only layout, same look as the native multiview. Right: 24 scenes.*
+
+<p align="center">
+  <img src="docs/images/05-settings.png" alt="Settings dialog" width="330">
+  <img src="docs/images/07-updates.png" alt="Updates tab with change log" width="330">
+</p>
+
+*Settings: border colour, label and meter opacity. Updates: check and change log. The release shown is a demo.*
 
 ---
 
@@ -44,7 +52,7 @@ The native OBS multiview is fixed: 8 or 24 scenes, no audio meters, no clock, no
 - **Settings.** Choose the border colour (the frame under and around the tiles), the label opacity and the meter opacity. Changes show live in every window.
 - **Remembers everything.** Preset, options and tile assignments are saved per window and per scene collection.
 - **Update check.** Tells you when a new version is out and shows its change log in the settings (automatic once a day, or on demand). It never downloads or installs anything: the download page opens in your browser.
-- **Light.** The draw path does no allocation and the audio callbacks only write atomics. Meters off means no audio work at all.
+- **Light.** The draw path allocates nothing per frame and the audio callbacks only write atomics. Meters off means no audio work at all.
 
 ### Presets
 
@@ -65,7 +73,7 @@ Download the zip for your system from the [Releases](https://github.com/angeloru
 | macOS | `obs-multiview-pro-<version>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
 | Linux | `obs-multiview-pro-<version>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
 
-Close OBS before copying. Needs OBS Studio 32.1 or newer. `SHA256SUMS.txt` on the release page lists the checksum of every zip. The binaries are not signed: macOS may ask you to allow the plugin in *System Settings → Privacy & Security*. To update, close OBS and unzip the new version over the old one.
+Close OBS before copying. Needs OBS Studio 32.1 or newer. `SHA256SUMS.txt` on the release page lists the checksum of every zip. The binaries are not signed: macOS may ask you to allow the plugin in *System Settings → Privacy & Security*; if it says the plugin is damaged, run `xattr -dr com.apple.quarantine obs-multiview-pro.plugin` in the plugins folder. The Linux zip is built for Ubuntu 24.04 with the OBS Studio PPA (not Flatpak or Snap). To update, close OBS and unzip the new version over the old one.
 
 ### Getting started
 
@@ -93,9 +101,9 @@ Scenes with *Show in Multiview* off are skipped, like the native one.
 
 ### Status and limits
 
-Alpha. Tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds run on CI but have not been tried yet.
+Version 1.0. Runtime-tested on **Windows 11 with OBS 32.2** only. The macOS and Linux builds are compiled and unit-tested on CI but have never been run: reports from those systems are welcome.
 
-- Wayland needs Qt 6.9 or newer. Older Qt: start OBS with `QT_QPA_PLATFORM=xcb`.
+- Wayland: the Linux release is built with Qt 6.4 (Ubuntu 24.04) and does not draw under a Wayland session (the display needs Qt 6.9 or newer). Start OBS with `QT_QPA_PLATFORM=xcb`.
 - Meters follow the program mix (track 1) and, for preview, the audio sources of the preview scene. Media sources set to *Restart when activated* stay silent off air, as in the OBS mixer. There are no meters on the other scene tiles yet.
 - OBS has no cache indicator like hardware switchers: the connection state comes from the output congestion.
 - If the window opens while streaming or recording, durations are derived from the output frame counter.
@@ -138,7 +146,7 @@ Il multiview nativo di OBS è fisso: 8 o 24 scene, nessun meter audio, nessun or
 - **Impostazioni.** Scegli il colore del bordo (la cornice sotto e attorno ai riquadri), l'opacità delle etichette e quella dei meter. Le modifiche si vedono subito in tutte le finestre.
 - **Ricorda tutto.** Preset, opzioni e assegnazioni sono salvati per finestra e per collezione di scene.
 - **Verifica aggiornamenti.** Ti avvisa quando esce una nuova versione e ne mostra il change log nelle impostazioni (automatica una volta al giorno, oppure a richiesta). Non scarica e non installa mai nulla: la pagina di download si apre nel browser.
-- **Leggero.** Il disegno non alloca memoria e i callback audio scrivono solo valori atomici. Con i meter spenti non c'è alcun lavoro audio.
+- **Leggero.** Il disegno non alloca memoria a ogni frame e i callback audio scrivono solo valori atomici. Con i meter spenti non c'è alcun lavoro audio.
 
 ### Preset
 
@@ -159,7 +167,7 @@ Scarica lo zip del tuo sistema dalla pagina [Releases](https://github.com/angelo
 | macOS | `obs-multiview-pro-<versione>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
 | Linux | `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
 
-Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo. `SHA256SUMS.txt` nella pagina della release elenca il checksum di ogni zip. I binari non sono firmati: macOS può chiedere di consentire il plugin in *Impostazioni di Sistema → Privacy e sicurezza*. Per aggiornare chiudi OBS ed estrai la nuova versione sopra la vecchia.
+Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo. `SHA256SUMS.txt` nella pagina della release elenca il checksum di ogni zip. I binari non sono firmati: macOS può chiedere di consentire il plugin in *Impostazioni di Sistema → Privacy e sicurezza*; se dice che il plugin è danneggiato, esegui `xattr -dr com.apple.quarantine obs-multiview-pro.plugin` nella cartella dei plugin. Lo zip per Linux è compilato per Ubuntu 24.04 con il PPA di OBS Studio (non Flatpak né Snap). Per aggiornare chiudi OBS ed estrai la nuova versione sopra la vecchia.
 
 ### Primi passi
 
@@ -187,9 +195,9 @@ Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo
 
 ### Stato e limiti
 
-Alpha. Provato solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux girano in CI ma non sono ancora state provate.
+Versione 1.0. Provata in esecuzione solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux sono compilate e passano i test unitari in CI, ma non sono mai state eseguite: le segnalazioni da quei sistemi sono benvenute.
 
-- Wayland richiede Qt 6.9 o successivo. Con Qt più vecchio avvia OBS con `QT_QPA_PLATFORM=xcb`.
+- Wayland: la release per Linux è compilata con Qt 6.4 (Ubuntu 24.04) e non disegna in una sessione Wayland (serve Qt 6.9 o successivo). Avvia OBS con `QT_QPA_PLATFORM=xcb`.
 - I meter seguono il mix del programma (traccia 1) e, per l'anteprima, le sorgenti audio della scena in anteprima. I file multimediali con *Riavvia quando attivata* restano muti fuori onda, come nel mixer di OBS. Per ora non ci sono meter sugli altri riquadri scena.
 - OBS non ha un indicatore di cache come gli switcher hardware: lo stato della connessione deriva dalla congestione dell'uscita.
 - Se la finestra si apre durante una diretta o una registrazione, le durate si ricavano dal contatore di frame dell'uscita.

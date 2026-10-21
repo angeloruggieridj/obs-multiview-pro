@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. The project is in alpha, so bug reports from macOS and Linux are especially useful.
+Thanks for helping. The plugin has only been run on Windows 11 so far, so bug reports from macOS and Linux are especially useful.
 
 ## Reporting a bug
 

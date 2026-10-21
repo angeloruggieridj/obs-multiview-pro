@@ -1,7 +1,6 @@
 # Build output and dependency cache
 build*/
 .deps/
-.superpowers/
 cmake/.CMakeBuildNumber
 .DS_Store
 *.lock.json
