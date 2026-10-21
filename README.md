@@ -92,6 +92,7 @@ Scenes with *Show in Multiview* off are skipped, like the native multiview.
 - Meters: program follows the program mix (track 1); preview and scene tiles show the loudest audio source of their scene (post-fader; the audio sources the OBS mixer lists for a scene, plus those of nested scenes and groups). A scene has no audio of its own: sources that only play on air (media set to *Restart when activated*) stay silent off air. At most 128 metered sources per window (mixer, preview, then tiles in order); the rest are noted in the OBS log.
 - Mixer tile: at most 7 sources beside PGM (global devices first, then the program scene, then the preview scene); the rest are left out and noted in the OBS log.
 - *CACHE* shows the output congestion (OBS has no cache indicator). No NDI state tile.
+- Each open multiview window meters its sources on its own (one volmeter per source per window); a hidden or minimised window does no audio work.
 - With *always on top*, OBS's own dialogs (properties, settings) can open behind the multiview, as with OBS's projectors kept on top.
 
 ### Build from source
@@ -174,6 +175,7 @@ Le scene con *Mostra in Vista multipla* disattivato vengono saltate, come nella 
 - Meter: il programma segue il mix del programma (traccia 1); l'anteprima e i riquadri scena mostrano la sorgente audio più forte della loro scena (dopo il fader; le sorgenti audio che il mixer di OBS elenca per una scena, più quelle delle scene annidate e dei gruppi). Una scena non ha audio proprio: le sorgenti che suonano solo in onda (file multimediali con *Riavvia la riproduzione quando la fonte torna attiva*) restano mute fuori onda. Al massimo 128 sorgenti con meter per finestra (mixer, anteprima, poi i riquadri in ordine); le altre sono segnalate nel log di OBS.
 - Riquadro mixer: al massimo 7 sorgenti oltre a PGM (prima i dispositivi globali, poi la scena in programma, poi quella in anteprima); le altre restano fuori e il log di OBS lo segnala.
 - *CACHE* mostra la congestione dell'uscita (OBS non ha un indicatore di cache). Nessun riquadro per lo stato NDI.
+- Ogni finestra Multiview aperta misura le sue sorgenti per conto proprio (un volmeter per sorgente per finestra); una finestra nascosta o ridotta a icona non fa lavoro audio.
 - Con *sempre in primo piano* le finestre di OBS (proprietà, impostazioni) possono aprirsi dietro la vista multipla, come con i proiettori di OBS tenuti in primo piano.
 
 ### Compilare dai sorgenti

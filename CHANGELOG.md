@@ -7,6 +7,7 @@
 - Mixer tile lists the audio sources of the program scene (and of the preview scene in studio mode) next to the global devices; at most 7 sources beside PGM, the others noted in the OBS log.
 - Mixer columns keep their place and peak hold across transitions.
 - Option to keep the multiview windows always on top (Settings and the window menu); the settings dialog stays above them.
+- Fixed: switching, creating or importing a scene collection with a multiview open could make OBS report a source leak and close.
 
 ## 1.0.0
 
