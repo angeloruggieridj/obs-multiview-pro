@@ -26,7 +26,7 @@ Parte solo al push di un tag `v*.*.*`; per ora il tag deve essere numerico, `vMA
 | --- | --- | --- |
 | `check` | il tag deve essere `vMAJOR.MINOR.PATCH`; senza `v` deve essere uguale a `version` di `buildspec.json` (letto con `jq`), e `CHANGELOG.md` deve avere una sezione `## <versione>` non vuota (`.github/scripts/changelog-section.sh`); altrimenti fallisce subito con un messaggio chiaro | `contents: read` |
 | `build` | `uses: ./.github/workflows/build.yml` (i tre job Windows / macOS / Ubuntu con ctest e upload) | `contents: read` |
-| `release` | scarica gli artifact, crea gli zip, `SHA256SUMS.txt`, estrae le note dalla sezione del CHANGELOG e chiama `gh release create "$GITHUB_REF_NAME" --verify-tag --title ... --notes-file ...` | `contents: write`, solo qui |
+| `release` | scarica gli artifact, crea gli zip, `SHA256SUMS.txt`, estrae le note dalla sezione del CHANGELOG (righe CRLF ripulite, i `## ` dentro i blocchi di codice non contano) e pubblica con `.github/scripts/publish-release.sh`: se esiste gia' una release pubblicata per il tag fallisce; altrimenti crea una bozza (`gh release create --draft --verify-tag`) o riusa quella lasciata da un run fallito, carica gli asset (`gh release upload --clobber`), controlla che i nomi siano esattamente quelli attesi e solo allora pubblica (`gh release edit --draft=false`). Le bozze non sono mai proposte dalla verifica aggiornamenti | `contents: write`, solo qui |
 
 Asset (layout pensato per estrarre lo zip direttamente nella cartella dei plugin):
 
@@ -39,14 +39,14 @@ Nessuna action di terze parti: `actions/checkout@v4`, `actions/upload-artifact@v
 
 Per pubblicare: rinominare `## Unreleased` in `## <versione>` nel CHANGELOG, portare `version` di `buildspec.json` alla stessa versione, commit, poi `git tag v<versione>` e push del tag.
 
-Verifiche fatte senza eseguirlo: struttura YAML con un controllo in Python (nessun PyYAML: parser del sottoinsieme usato; job, `needs`, `uses` versionati, `workflow_call` presente), estrazione delle note provata in locale su un CHANGELOG di prova (sezione presente, `v`/`[...]`/testo dopo la versione, sezione mancante o vuota -> errore), passi di packaging eseguiti in locale con artifact finti e `gh` simulato (nomi e contenuto degli zip, checksum). Percorsi controllati contro `CMakePresets.json` e gli upload di `build.yml` (`build_x64/rundir/RelWithDebInfo`, `build_macos/rundir/RelWithDebInfo/*.plugin`, `build_x86_64/rundir/RelWithDebInfo/*.so`).
+Verifiche fatte senza eseguirlo: struttura YAML con un controllo in Python (nessun PyYAML: parser del sottoinsieme usato; job, `needs`, `uses` versionati, `workflow_call` presente), estrazione delle note provata in locale su un CHANGELOG di prova (sezione presente, `v`/`[...]`/testo dopo la versione, sezione mancante o vuota -> errore), passi di packaging e pubblicazione eseguiti in locale con artifact finti e un `gh` simulato con stato (nomi e contenuto degli zip, checksum; tag nuovo -> bozza, upload, controllo, pubblicazione; secondo run su release pubblicata -> errore; bozza parziale -> riusata e completata; bozza con un asset estraneo -> errore prima di pubblicare); estrazione delle note provata anche su un CHANGELOG CRLF con `## ` dentro blocchi ``` e ~~~. Percorsi controllati contro `CMakePresets.json` e gli upload di `build.yml` (`build_x64/rundir/RelWithDebInfo`, `build_macos/rundir/RelWithDebInfo/*.plugin`, `build_x86_64/rundir/RelWithDebInfo/*.so`).
 
 Da controllare al primo tag:
 
 1. Il job `check` legge la versione (jq) e trova la sezione del CHANGELOG.
 2. Il workflow riusabile parte con i permessi `contents: read` e i tre job passano come in `build.yml`.
 3. Gli artifact scaricati stanno in `artifacts/<nome-artifact>/` con i file attesi (un `.dll` + `.pdb`, un `.plugin.zip`, un `.so`); il job elenca i file e il contenuto degli zip nel log.
-4. `gh release create` crea la release con i 4 asset.
+4. La bozza viene creata, riceve i 4 asset, il controllo dei nomi passa e la release diventa pubblica. `gh release view <tag>` deve trovare anche una bozza (gh cerca le bozze per nome del tag); se non la trova, un secondo run creerebbe una seconda bozza: in quel caso eliminare la bozza a mano.
 5. Ubuntu: `libcurl4-openssl-dev` installato da apt e trovato da `find_package(CURL)`; macOS: `find_package(CURL)` trova la libcurl dell'SDK (come fa OBS stesso) o quella di obs-deps se presente, universale arm64+x86_64.
 
 ## Stato: mai eseguito

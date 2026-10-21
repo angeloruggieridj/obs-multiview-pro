@@ -3,8 +3,10 @@
 #
 # Prints the body of the "## <version>" section of a change log (up to the
 # next "## " heading). "## 1.2.0", "## v1.2.0", "## [1.2.0]" and a heading
-# with text after the version ("## 1.2.0 - 2026-10-21") all match.
-# Fails with a clear message when the section is missing or empty.
+# with text after the version ("## 1.2.0 - 2026-10-21") all match. CR line
+# ends are dropped (CRLF files); "## " lines inside fenced code blocks (``` or
+# ~~~) are not headings. Fails with a clear message when the section is
+# missing or empty.
 #
 # Usage: changelog-section.sh <version> <CHANGELOG.md>
 set -euo pipefail
@@ -18,7 +20,9 @@ if [ ! -f "$file" ]; then
 fi
 
 notes="$(awk -v ver="$version" '
-  /^## / {
+  { sub(/\r$/, "") }
+  /^ ? ? ?(```|~~~)/ { fence = !fence }
+  !fence && /^## / {
     if (found) exit
     h = $2
     gsub(/^\[|\]$/, "", h)

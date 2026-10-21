@@ -115,14 +115,14 @@ jobs:
       - name: Release notes from CHANGELOG.md
         run: bash .github/scripts/changelog-section.sh "$VERSION" CHANGELOG.md > release-notes.md
 
-      - name: Create the GitHub release
+      # Draft first, assets uploaded and checked, then published: a run that
+      # fails half way leaves a draft (never offered by the update check) that
+      # the next run reuses; an already published release is never touched.
+      - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" \
-            --verify-tag \
-            --title "Multiview Pro for OBS $VERSION" \
-            --notes-file release-notes.md \
+          bash .github/scripts/publish-release.sh "$GITHUB_REF_NAME" \
+            "Multiview Pro for OBS $VERSION" release-notes.md \
             dist/*.zip dist/SHA256SUMS.txt
