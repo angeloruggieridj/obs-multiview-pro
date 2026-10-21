@@ -13,19 +13,24 @@
 /* The columns of the mixer tile and what feeds them (UI thread only).
  *
  * The last column is PGM (the program mix: the renderer's own AudioMeter, so
- * `feed` is null there). The others, in channel order, are the OBS global audio devices, i.e. the sources
- * set on output channels 1..6 (Desktop Audio, Mic/Aux ...): each has an
- * AudioMeter with exactly one volmeter on it, which holds a counted reference
- * of the source (the same discipline as the preview feed of the Task 9). At
- * most kMixerMaxColumns columns.
+ * `feed` is null there). The others are the audio sources, in the order of
+ * select_mixer_columns: the OBS global audio devices (the sources set on
+ * output channels 1..6: Desktop Audio, Mic/Aux ...), then the audio sources of
+ * the program scene, then, in studio mode, those of the preview scene; one
+ * column per source however many places it is in. Each has an AudioMeter
+ * with exactly one volmeter on it, which holds a counted reference of the
+ * source (the same discipline as the preview feed of the Task 9). At most
+ * kMixerMaxColumns columns; the sources beyond are not shown (logged once
+ * per change of their number).
  *
- * refresh() is called from the 500 ms poll and when the scenes change: it
- * enumerates the output channels (obs_get_output_source: one counted
- * reference each, every one released before returning), compares the pointer
- * with the source the column's volmeter is attached to, and attaches / detaches
- * only what changed. A source removed, or replaced on its channel, loses its
- * volmeter (and its reference) at that call. Names and mute states are read at
- * the same time.
+ * refresh() is called from the 500 ms poll and when the scenes, the program,
+ * the preview or studio mode change: it enumerates the output channels
+ * (obs_get_output_source: one counted reference each, every one released
+ * before returning), takes the scene lists from the caller, compares each
+ * wanted source with the source a column's volmeter is attached to (pointer
+ * identity), and attaches / detaches only what changed. A source removed, or
+ * gone from every list, loses its volmeter (and its reference) at that call.
+ * Names and mute states are read at the same time.
  *
  * The dB text of a column follows db_text_update_due (at most twice a second,
  * only for a change of 1 dB or more); the mute word shows at once.
@@ -35,7 +40,7 @@
 class MixerFeeds {
 public:
 	struct Column {
-		int channel = kMixerPgm;            /* 0 = PGM, n = OBS output channel n */
+		MixerSourceId id = kMixerPgm;       /* kMixerPgm, or the source the feed holds */
 		std::shared_ptr<AudioMeter> feed;   /* null for PGM */
 		std::string name;
 		bool muted = false;
@@ -50,10 +55,14 @@ public:
 	MixerFeeds(const MixerFeeds &) = delete;
 	MixerFeeds &operator=(const MixerFeeds &) = delete;
 
-	/* Re-reads the global audio devices (see above). Returns Change bits:
-	 * kSetChanged when a column appeared, vanished or changed source,
-	 * kTextChanged when a name or a mute state changed. */
-	unsigned refresh(int64_t now_ms);
+	/* Re-reads the global audio devices and takes the audio sources of the
+	 * program and preview scenes (see above). `program` and `preview` are
+	 * borrowed: the caller keeps (and later releases) their references; a
+	 * new column takes its own. `preview` counts only when `studio_mode`.
+	 * Returns Change bits: kSetChanged when a column appeared, vanished or
+	 * changed source, kTextChanged when a name or a mute state changed. */
+	unsigned refresh(int64_t now_ms, const std::vector<obs_source_t *> &program,
+			 const std::vector<obs_source_t *> &preview, bool studio_mode);
 
 	/* `hold_db[i]` is the peak-hold level of column i (the larger channel), as
 	 * measured by the graphics thread. Updates the dB texts that are due.
@@ -71,4 +80,5 @@ public:
 private:
 	std::vector<Column> m_columns;
 	uint64_t m_generation = 1;
+	size_t m_dropped_logged = 0; /* sources left out, as last logged */
 };

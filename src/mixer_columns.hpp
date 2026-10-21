@@ -13,16 +13,33 @@
 #include <string>
 #include <vector>
 
-constexpr size_t kMixerMaxColumns = 8;  /* PGM + up to 7 devices */
+constexpr size_t kMixerMaxColumns = 8;  /* PGM + up to 7 audio sources */
 constexpr int kMixerGlobalChannels = 6; /* OBS output channels 1..6 (Desktop Audio, Mic/Aux ...) */
-constexpr int kMixerPgm = 0;            /* column id of the program mix */
 
-/* Which columns the tile shows, as ids: 0 = PGM, n = OBS output channel n
- * (1-based). `present[i]` says whether output channel i + 1 holds a source.
- * The present channels come in channel order, then PGM last (rightmost), at
- * most `max_columns` in all (PGM is never dropped, the first channels win).
- * max_columns 0 -> empty. */
-std::vector<int> select_mixer_columns(const std::vector<bool> &present, size_t max_columns = kMixerMaxColumns);
+/* Identifies an audio source (the plugin uses the source's address, kept
+ * unique by the reference it holds); 0 is no source. */
+using MixerSourceId = uintptr_t;
+constexpr MixerSourceId kMixerPgm = 0; /* column id of the program mix */
+
+/* The audio sources the tile could show, by where they come from. */
+struct MixerSourceLists {
+	std::vector<MixerSourceId> devices; /* global audio devices, channel order (0: empty channel) */
+	std::vector<MixerSourceId> program; /* audio sources of the program scene, scene order */
+	std::vector<MixerSourceId> preview; /* audio sources of the preview scene, scene order */
+	bool studio_mode = false;           /* the preview list counts only in studio mode */
+};
+
+struct MixerSelection {
+	std::vector<MixerSourceId> columns; /* left to right; kMixerPgm is the last one */
+	size_t dropped = 0;                 /* distinct sources left out by the cap */
+};
+
+/* Which columns the tile shows: one per distinct source, global devices
+ * first, then the program scene's sources, then (studio mode only) the
+ * preview scene's; a source listed more than once keeps its first place.
+ * PGM comes last (rightmost). At most `max_columns` in all: PGM is never
+ * dropped, the sources last in that order are. max_columns 0 -> no column. */
+MixerSelection select_mixer_columns(const MixerSourceLists &in, size_t max_columns = kMixerMaxColumns);
 
 /* `utf8` shortened to `max_chars` code points: unchanged when it fits, else
  * its first max_chars - 1 code points (trailing spaces dropped) followed by

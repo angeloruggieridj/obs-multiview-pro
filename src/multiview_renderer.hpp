@@ -80,10 +80,11 @@ class ObsState;
  * m_gfx_scale). While the meters are off nothing is attached to OBS audio and
  * render() only does one atomic load for them.
  *
- * Mixer tile (status presets, meters on): one column per PGM and per OBS global
- * audio device (MixerFeeds, UI thread: one volmeter per device, atomics only
- * like the other meters; the PGM column reads the program levels the Program
- * meter already takes). The bars are solid quads in the same effect loop as the
+ * Mixer tile (status presets, meters on): one column per audio source (the OBS
+ * global audio devices, the sources of the program scene and, in studio mode,
+ * of the preview scene; MixerFeeds, UI thread: one volmeter per source, atomics
+ * only like the other meters) and PGM last (it reads the program levels the
+ * Program meter already takes). The bars are solid quads in the same effect loop as the
  * other meters (ballistics per column, same maths), drawn after the status
  * batch so they go over the tile's image. The names and dB values are
  * rasterized with Qt into that image, only when a name, value, mute state or
@@ -297,12 +298,12 @@ private:
 	void build_meter_scale(RenderSnapshot &snap);
 	void build_mixer(RenderSnapshot &snap);
 	bool has_mixer_tile() const;
-	/* UI thread: the 500 ms poll (preview scene items, mixer devices / texts). */
+	/* UI thread: the 500 ms poll (preview scene items, mixer sources / texts). */
 	void poll_audio();
-	void poll_mixer();
+	void poll_mixer(const std::vector<obs_source_t *> &preview, bool studio);
 	/* UI thread: (re)attaches the audio feeds to what is on air / in preview. */
 	void refresh_audio();
-	void poll_preview_audio();
+	void poll_preview_audio(std::vector<obs_source_t *> sources);
 	DeviceMap display_map(float fw, float fh) const;
 	void check_canvas();
 	/* Graphics thread only (or with the draw callback gone, in graphics). */
@@ -362,7 +363,7 @@ private:
 	 * (atomics only) by the graphics thread; they live as long as the renderer. */
 	AudioMeter m_pgm_audio;
 	AudioMeter m_pvw_audio;
-	QTimer m_audio_timer; /* 500 ms: preview scene items (studio mode), mixer devices (mixer tile) */
+	QTimer m_audio_timer; /* 500 ms: preview scene items (studio mode), mixer sources (mixer tile) */
 	MixerFeeds m_mixer;   /* columns of the mixer tile (meters on + mixer tile) */
 	std::shared_ptr<const MeterScaleBatch> m_scale_batch;
 	std::vector<int> m_scale_key; /* what m_scale_batch was rasterized for */

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -14,30 +15,108 @@ constexpr float kNan = std::numeric_limits<float>::quiet_NaN();
 const std::string kEllipsis = "\xE2\x80\xA6"; /* U+2026 */
 } // namespace
 
-TEST_CASE("mixer_select_columns_pgm_only_without_devices")
+namespace {
+using Ids = std::vector<MixerSourceId>;
+
+MixerSourceLists lists(Ids devices, Ids program, Ids preview, bool studio)
 {
-	CHECK(select_mixer_columns({false, false, false, false, false, false}) == std::vector<int>{0});
-	CHECK(select_mixer_columns({}) == std::vector<int>{0});
+	MixerSourceLists in;
+	in.devices = std::move(devices);
+	in.program = std::move(program);
+	in.preview = std::move(preview);
+	in.studio_mode = studio;
+	return in;
+}
+} // namespace
+
+TEST_CASE("mixer_select_columns_pgm_only_without_sources")
+{
+	const MixerSelection s = select_mixer_columns(MixerSourceLists());
+	CHECK(s.columns == Ids{kMixerPgm});
+	CHECK(s.dropped == 0);
+	/* empty channels (0) are not sources */
+	CHECK(select_mixer_columns(lists({0, 0, 0, 0, 0, 0}, {}, {}, true)).columns == Ids{kMixerPgm});
+	CHECK(select_mixer_columns(lists({}, {}, {}, true)).columns == Ids{kMixerPgm});
 }
 
-TEST_CASE("mixer_select_columns_channel_order_then_pgm_last")
+TEST_CASE("mixer_select_columns_devices_in_channel_order_then_pgm_last")
 {
-	/* Desktop Audio (1) and Mic/Aux (3), a gap at 2 */
-	CHECK(select_mixer_columns({true, false, true, false, false, false}) == std::vector<int>{1, 3, 0});
-	CHECK(select_mixer_columns({false, false, false, false, false, true}) == std::vector<int>{6, 0});
-	CHECK(select_mixer_columns({true, true, true, true, true, true}) == std::vector<int>{1, 2, 3, 4, 5, 6, 0});
+	/* Desktop Audio on channel 1 and Mic/Aux on channel 3, a gap at 2 */
+	CHECK(select_mixer_columns(lists({11, 0, 13, 0, 0, 0}, {}, {}, false)).columns == Ids{11, 13, kMixerPgm});
+	CHECK(select_mixer_columns(lists({0, 0, 0, 0, 0, 16}, {}, {}, false)).columns == Ids{16, kMixerPgm});
 }
 
-TEST_CASE("mixer_select_columns_capped")
+TEST_CASE("mixer_select_columns_program_scene_sources_without_devices")
 {
-	const std::vector<bool> ten(10, true);
-	const std::vector<int> cols = select_mixer_columns(ten);
-	REQUIRE(cols.size() == kMixerMaxColumns);
-	CHECK(cols.back() == 0);  /* PGM never dropped, always last */
-	CHECK(cols[cols.size() - 2] == 7); /* the first channels win */
-	CHECK(select_mixer_columns(ten, 3) == std::vector<int>{1, 2, 0});
-	CHECK(select_mixer_columns(ten, 1) == std::vector<int>{0});
-	CHECK(select_mixer_columns(ten, 0).empty());
+	/* The reported case: no global device, the audio is in the scene. */
+	CHECK(select_mixer_columns(lists({}, {21, 22, 23}, {}, false)).columns == Ids{21, 22, 23, kMixerPgm});
+	CHECK(select_mixer_columns(lists({0, 0}, {23, 21}, {}, true)).columns == Ids{23, 21, kMixerPgm});
+}
+
+TEST_CASE("mixer_select_columns_order_devices_program_preview")
+{
+	const MixerSelection s = select_mixer_columns(lists({11, 0, 12}, {21, 22}, {31, 32}, true));
+	CHECK(s.columns == Ids{11, 12, 21, 22, 31, 32, kMixerPgm});
+	CHECK(s.dropped == 0);
+}
+
+TEST_CASE("mixer_select_columns_preview_only_in_studio_mode")
+{
+	CHECK(select_mixer_columns(lists({11}, {21}, {31, 32}, false)).columns == Ids{11, 21, kMixerPgm});
+	CHECK(select_mixer_columns(lists({11}, {21}, {31, 32}, true)).columns == Ids{11, 21, 31, 32, kMixerPgm});
+	/* studio mode off: the preview list does not count for the cap either */
+	CHECK(select_mixer_columns(lists({}, {}, {31, 32, 33, 34, 35, 36, 37, 38, 39}, false)).dropped == 0);
+}
+
+TEST_CASE("mixer_select_columns_deduplicated_across_categories")
+{
+	/* 21 is both a global device and in the program scene; 22 is in both
+	 * scenes; 31 twice in the preview list: one column each, at the first place. */
+	const MixerSelection s = select_mixer_columns(lists({21, 0, 11}, {22, 21, 23, 22}, {22, 31, 31, 23}, true));
+	CHECK(s.columns == Ids{21, 11, 22, 23, 31, kMixerPgm});
+	CHECK(s.dropped == 0);
+	/* a source in the program scene and in the preview scene: one column */
+	CHECK(select_mixer_columns(lists({}, {21}, {21}, true)).columns == Ids{21, kMixerPgm});
+	/* the same device on two channels */
+	CHECK(select_mixer_columns(lists({11, 11}, {}, {}, false)).columns == Ids{11, kMixerPgm});
+	/* a source id equal to the PGM id is not a source */
+	CHECK(select_mixer_columns(lists({kMixerPgm}, {kMixerPgm}, {kMixerPgm}, true)).columns == Ids{kMixerPgm});
+}
+
+TEST_CASE("mixer_select_columns_capped_last_ones_dropped")
+{
+	/* 3 devices + 4 program + 3 preview = 10 sources, 7 fit beside PGM */
+	const MixerSelection s = select_mixer_columns(lists({11, 12, 13}, {21, 22, 23, 24}, {31, 32, 33}, true));
+	REQUIRE(s.columns.size() == kMixerMaxColumns);
+	CHECK(s.columns == Ids{11, 12, 13, 21, 22, 23, 24, kMixerPgm});
+	CHECK(s.columns.back() == kMixerPgm); /* never dropped, always last */
+	CHECK(s.dropped == 3);
+	/* duplicates do not count as dropped */
+	const MixerSelection d = select_mixer_columns(lists({11, 12, 13}, {21, 22, 23, 24, 11}, {31, 21, 32}, true));
+	CHECK(d.dropped == 2);
+	/* smaller caps */
+	const MixerSourceLists in = lists({11, 12}, {21}, {31}, true);
+	const MixerSelection three = select_mixer_columns(in, 3);
+	CHECK(three.columns == Ids{11, 12, kMixerPgm});
+	CHECK(three.dropped == 2);
+	const MixerSelection one = select_mixer_columns(in, 1);
+	CHECK(one.columns == Ids{kMixerPgm});
+	CHECK(one.dropped == 4);
+	const MixerSelection none = select_mixer_columns(in, 0);
+	CHECK(none.columns.empty());
+	CHECK(none.dropped == 4);
+	/* exactly full: nothing dropped */
+	const MixerSelection full = select_mixer_columns(lists({}, {1, 2, 3, 4, 5, 6, 7}, {}, false));
+	CHECK(full.columns.size() == kMixerMaxColumns);
+	CHECK(full.dropped == 0);
+}
+
+TEST_CASE("mixer_value_of_a_muted_source_is_the_mute_word")
+{
+	/* whatever the level, the tile writes the mute word and the bar is empty */
+	CHECK(mixer_value(true, -6.f).style == MixerValueStyle::Mute);
+	CHECK(mixer_value(true, -6.f).text.empty());
+	CHECK(mixer_value(true, kMeterFloorDb).style == MixerValueStyle::Mute);
 }
 
 TEST_CASE("mixer_elide_name")

@@ -3,17 +3,30 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 
-std::vector<int> select_mixer_columns(const std::vector<bool> &present, size_t max_columns)
+MixerSelection select_mixer_columns(const MixerSourceLists &in, size_t max_columns)
 {
-	std::vector<int> out;
-	if (max_columns == 0)
-		return out;
-	for (size_t i = 0; i < present.size() && out.size() + 1 < max_columns; ++i)
-		if (present[i])
-			out.push_back(int(i) + 1);
-	out.push_back(kMixerPgm); /* last: rightmost */
+	/* Distinct sources in priority order (a few dozen at most: linear search). */
+	std::vector<MixerSourceId> order;
+	auto add = [&order](const std::vector<MixerSourceId> &ids) {
+		for (MixerSourceId id : ids)
+			if (id != kMixerPgm && std::find(order.begin(), order.end(), id) == order.end())
+				order.push_back(id);
+	};
+	add(in.devices);
+	add(in.program);
+	if (in.studio_mode)
+		add(in.preview);
+
+	MixerSelection out;
+	const size_t room = max_columns > 0 ? max_columns - 1 : 0; /* beside PGM */
+	const size_t kept = std::min(order.size(), room);
+	out.columns.assign(order.begin(), order.begin() + std::ptrdiff_t(kept));
+	out.dropped = order.size() - kept;
+	if (max_columns > 0)
+		out.columns.push_back(kMixerPgm); /* last: rightmost */
 	return out;
 }
 

@@ -111,15 +111,18 @@ MultiviewRenderer::MultiviewRenderer(ObsState &state, const Appearance &appearan
 	connect(&m_state, &ObsState::preview_changed, this, [this] { rebuild_snapshot(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { rebuild_snapshot(); });
 
-	/* Audio feeds follow what is in preview (studio mode). Connected after the
-	 * snapshot handlers above, so those run first. */
+	/* Audio feeds follow what is in preview (studio mode) and, for the mixer
+	 * tile, in program. Connected after the snapshot handlers above, so those
+	 * run first. */
 	connect(&m_state, &ObsState::scenes_changed, this, [this] { refresh_audio(); });
+	connect(&m_state, &ObsState::program_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::preview_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { refresh_audio(); });
-	/* Items added to / removed from / shown in the preview scene, and the
-	 * global audio devices of the mixer tile (added, removed, renamed, muted),
-	 * have no cheap event: look again twice a second. The timer runs only with
-	 * the meters on and either studio mode or a mixer tile (stopped otherwise). */
+	/* Items added to / removed from / shown in the program and preview
+	 * scenes, and the global audio devices and sources of the mixer tile
+	 * (added, removed, renamed, muted), have no cheap event: look again twice
+	 * a second. The timer runs only with the meters on and either studio mode
+	 * or a mixer tile (stopped otherwise). */
 	m_audio_timer.setInterval(500);
 	m_audio_timer.setTimerType(Qt::PreciseTimer); /* the dB text rule counts 500 ms */
 	connect(&m_audio_timer, &QTimer::timeout, this, [this] { poll_audio(); });
@@ -649,7 +652,7 @@ void MultiviewRenderer::set_audio_meters(bool on)
  * attached once while the meters are on. The preview feed is one volmeter per
  * audio source of the preview scene, in studio mode only (outside it the
  * Preview tile shows the program, so its meter mirrors the program levels).
- * The mixer tile's feeds (one volmeter per global audio device) exist only
+ * The mixer tile's feeds (one volmeter per audio source it shows) exist only
  * while a mixer tile is in the layout. Meters off: nothing attached. */
 void MultiviewRenderer::refresh_audio()
 {
@@ -688,21 +691,59 @@ bool MultiviewRenderer::has_mixer_tile() const
 	return false;
 }
 
-void MultiviewRenderer::poll_audio()
+namespace {
+
+/* The audio sources of the scene called `name` (collect_scene_audio_sources:
+ * one counted reference each, the caller releases them). Empty for no name, an
+ * unknown scene or one being deleted. */
+std::vector<obs_source_t *> scene_audio_sources(const std::string &name)
 {
-	poll_preview_audio();
-	poll_mixer();
+	std::vector<obs_source_t *> sources;
+	if (name.empty())
+		return sources;
+	if (obs_source_t *scene = obs_get_source_by_name(name.c_str())) {
+		if (!obs_source_removed(scene))
+			sources = collect_scene_audio_sources(scene);
+		obs_source_release(scene);
+	}
+	return sources;
 }
 
-/* The mixer tile's devices, names, mute states and dB texts. Rebuilds the
+void release_all(std::vector<obs_source_t *> &sources)
+{
+	for (obs_source_t *s : sources)
+		obs_source_release(s);
+	sources.clear();
+}
+
+} // namespace
+
+/* One enumeration of the preview scene per poll, shared by the preview meter
+ * and the mixer tile. */
+void MultiviewRenderer::poll_audio()
+{
+	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed))
+		return;
+	const bool studio = m_state.studio_mode();
+	std::vector<obs_source_t *> preview; /* counted references, ours */
+	if (studio)
+		preview = scene_audio_sources(m_state.preview_scene());
+	poll_mixer(preview, studio);
+	poll_preview_audio(std::move(preview)); /* takes them */
+}
+
+/* The mixer tile's sources, names, mute states and dB texts. Rebuilds the
  * snapshot only when something visible changed (a set change, a name, a mute,
- * or a dB text that is due: 500 ms apart and 1 dB or more). */
-void MultiviewRenderer::poll_mixer()
+ * or a dB text that is due: 500 ms apart and 1 dB or more). `preview` is
+ * borrowed. */
+void MultiviewRenderer::poll_mixer(const std::vector<obs_source_t *> &preview, bool studio)
 {
 	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !has_mixer_tile())
 		return;
 	const int64_t now_ms = int64_t(os_gettime_ns() / 1000000ull);
-	unsigned changed = m_mixer.refresh(now_ms);
+	std::vector<obs_source_t *> program = scene_audio_sources(m_state.program_scene());
+	unsigned changed = m_mixer.refresh(now_ms, program, preview, studio);
+	release_all(program);
 
 	/* The graphics thread publishes the levels per snapshot generation: trust
 	 * them only once it has drawn the columns we have now. */
@@ -717,20 +758,13 @@ void MultiviewRenderer::poll_mixer()
 		rebuild_snapshot();
 }
 
-void MultiviewRenderer::poll_preview_audio()
+/* `sources`: the audio sources of the preview scene, counted references that
+ * this function takes over (studio mode). */
+void MultiviewRenderer::poll_preview_audio(std::vector<obs_source_t *> sources)
 {
-	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !m_state.studio_mode())
+	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !m_state.studio_mode()) {
+		release_all(sources);
 		return;
-
-	std::vector<obs_source_t *> sources;
-	const std::string name = m_state.preview_scene();
-	if (!name.empty()) {
-		obs_source_t *scene = obs_get_source_by_name(name.c_str());
-		if (scene) {
-			if (!obs_source_removed(scene))
-				sources = collect_scene_audio_sources(scene);
-			obs_source_release(scene);
-		}
 	}
 
 	if (m_pvw_audio.has_sources(sources)) {
