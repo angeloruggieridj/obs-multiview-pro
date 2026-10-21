@@ -123,7 +123,18 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
-          sudo apt-get update
+          # Launchpad is sometimes unavailable (HTTP 503) and apt then silently
+          # falls back to Ubuntu's own, older obs-studio, which has no libobs
+          # development files. Retry, and refuse to build against anything but
+          # the OBS Studio PPA package.
+          ppa_ready() { [[ "$(apt-cache policy obs-studio | awk '/Candidate:/ {print $2}')" == *obsproject* ]]; }
+          for attempt in 1 2 3 4 5 6; do
+            sudo apt-get update || true
+            ppa_ready && break
+            echo "OBS Studio PPA index not available (attempt $attempt of 6), retrying in 30 s"
+            sleep 30
+          done
+          ppa_ready || { echo "::error::The OBS Studio PPA is not available: not building against another libobs."; exit 1; }
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config ccache \
             libgles2-mesa-dev libsimde-dev obs-studio \
