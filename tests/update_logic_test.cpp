@@ -228,6 +228,49 @@ TEST_CASE("state_update_images_are_stripped")
 	CHECK(md.find("evil.example") == std::string::npos);
 }
 
+TEST_CASE("state_update_images_are_stripped_in_every_form")
+{
+	/* Reference-style, collapsed and shortcut references. */
+	CHECK(strip_markdown_images("a ![x][r] b\n\n[r]: //127.0.0.1/x.png") == "a x b\n\n[r]: //127.0.0.1/x.png");
+	CHECK(strip_markdown_images("![x][] and ![y]") == "x and y");
+	/* Nested brackets in the alt text, nested parentheses in the target. */
+	CHECK(strip_markdown_images("![a [b] c](u)") == "a [b] c");
+	CHECK(strip_markdown_images("![x](u(1).png) z") == "x z");
+	CHECK(strip_markdown_images("![x](<a b.png> \"t\") z") == "x z");
+	/* An image inside link text: the link stays, the image goes. */
+	CHECK(strip_markdown_images("[![badge](https://img.example/x.svg)](https://github.com/x)") ==
+	      "[badge](https://github.com/x)");
+	/* An image inside an image's alt text. */
+	CHECK(strip_markdown_images("![a ![b](u) c](v)") == "a b c");
+	/* file: and UNC targets are images like any other. */
+	CHECK(strip_markdown_images("![x](file://127.0.0.1/x.png)") == "x");
+	CHECK(strip_markdown_images("![x](\\\\127.0.0.1\\share\\x.png)") == "x");
+	/* HTML image tags, any case, and unterminated forms. */
+	CHECK(strip_markdown_images("a<img src=//127.0.0.1/x.png>b<Img\tsrc=y>c") == "abc");
+	CHECK(strip_markdown_images("![never closed") == "never closed");
+	CHECK(strip_markdown_images("![a [b](u") == "a [b](u");
+	/* Text that only looks similar stays. */
+	CHECK(strip_markdown_images("Wow! [link](u) [ref][r] <imgx> <b>") == "Wow! [link](u) [ref][r] <imgx> <b>");
+	/* No image syntax survives a hostile mix. */
+	const std::string hostile = "![a](x) ![b][c] [c]: y ![![d](e)](f) <img src=g> ![h] !![i](j)";
+	CHECK(strip_markdown_images(hostile).find("![") == std::string::npos);
+	CHECK(strip_markdown_images(hostile).find("<img") == std::string::npos);
+
+	/* Deep nesting: bounded work, no stack exhaustion, no image left. */
+	std::string deep;
+	for (int k = 0; k < 20000; ++k)
+		deep += "![";
+	deep += "x";
+	for (int k = 0; k < 20000; ++k)
+		deep += "](u)";
+	CHECK(strip_markdown_images(deep).find("![") == std::string::npos);
+	/* Many unclosed brackets (linear time, nothing left). */
+	std::string open_only;
+	for (int k = 0; k < 32000; ++k)
+		open_only += "![a(";
+	CHECK(strip_markdown_images(open_only).find("![") == std::string::npos);
+}
+
 /* ---- evaluate / texts ---------------------------------------------------------- */
 
 TEST_CASE("state_update_evaluate")
@@ -374,8 +417,10 @@ TEST_CASE("state_update_redirect_allow_list")
 {
 	CHECK(is_allowed_redirect("https", "github.com"));
 	CHECK(is_allowed_redirect("https", "api.github.com"));
-	CHECK(is_allowed_redirect("https", "objects.githubusercontent.com"));
-	CHECK(is_allowed_redirect("https", "githubusercontent.com"));
+	CHECK_FALSE(is_allowed_redirect("https", "objects.githubusercontent.com"));
+	CHECK_FALSE(is_allowed_redirect("https", "githubusercontent.com"));
+	CHECK_FALSE(is_allowed_redirect("https", "uploads.github.com"));
+	CHECK_FALSE(is_allowed_redirect("https", "gist.github.com"));
 	CHECK_FALSE(is_allowed_redirect("http", "api.github.com"));
 	CHECK_FALSE(is_allowed_redirect("https", "evilgithub.com"));
 	CHECK_FALSE(is_allowed_redirect("https", "github.com.evil.example"));
@@ -389,14 +434,25 @@ TEST_CASE("state_update_url_override")
 {
 	CHECK(update_url_override(nullptr).empty());
 	CHECK(update_url_override("").empty());
+	/* Loopback test servers only, http or https. */
 	CHECK(update_url_override("http://127.0.0.1:8765/releases.json") == "http://127.0.0.1:8765/releases.json");
 	CHECK(update_url_override("http://localhost:8765/r") == "http://localhost:8765/r");
-	CHECK(update_url_override("https://example.org/r") == "https://example.org/r");
+	CHECK(update_url_override("https://127.0.0.1:8443/r") == "https://127.0.0.1:8443/r");
+	CHECK(update_url_override("https://localhost/r") == "https://localhost/r");
+	CHECK(update_url_override("http://[::1]:8765/r") == "http://[::1]:8765/r");
+	CHECK(update_url_override("http://127.0.0.1/r") == "http://127.0.0.1/r");
+	CHECK(update_url_override("https://example.org/r").empty()); /* no generic https */
+	CHECK(update_url_override("https://api.github.com/x").empty());
 	CHECK(update_url_override("http://example.org/r").empty());
 	CHECK(update_url_override("http://127.0.0.1.evil.example/r").empty());
-	CHECK(update_url_override("http://127.0.0.1/r").empty()); /* the port is required */
 	CHECK(update_url_override("http://localhost.evil.example:80/r").empty());
+	CHECK(update_url_override("http://127.0.0.1:80@evil.example/r").empty());
+	CHECK(update_url_override("http://localhost@evil.example/r").empty());
+	CHECK(update_url_override("http://127.0.0.1").empty()); /* a path is required */
+	CHECK(update_url_override("http://127.0.0.2:80/r").empty());
 	CHECK(update_url_override("file:///C:/x.json").empty());
-	CHECK(update_url_override("https://example.org/a b").empty());
-	CHECK(update_url_override("https://example.org/a\nb").empty());
+	CHECK(update_url_override("ftp://127.0.0.1:21/r").empty());
+	CHECK(update_url_override("http://127.0.0.1:8765/a b").empty());
+	CHECK(update_url_override("http://127.0.0.1:8765/a\nb").empty());
+	CHECK(update_url_override("http://127.0.0.1:8765/a\\b").empty());
 }

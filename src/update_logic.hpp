@@ -69,7 +69,9 @@ std::vector<ReleaseInfo> newer_releases(const std::vector<ReleaseInfo> &releases
  * with a truncation marker. */
 std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t max_bytes = kMaxChangelogBytes);
 
-/* Markdown images "![alt](url)" become "alt"; HTML <img ...> tags are dropped. */
+/* Every Markdown image form ("![alt](url)", "![alt][ref]", "![alt][]",
+ * "![alt]", nested brackets, images inside link text or alt text) becomes its
+ * alt text; an unclosed "![" is dropped; HTML <img ...> tags are dropped. */
 std::string strip_markdown_images(const std::string &markdown);
 
 /* ---- Check result ------------------------------------------------------------ */
@@ -120,11 +122,12 @@ bool should_auto_check(int64_t now, int64_t last_check, bool enabled, bool strea
  * characters, no user info, no port). */
 bool is_allowed_release_url(const std::string &url);
 
-/* Redirects of the API request: https to github.com, *.github.com,
- * githubusercontent.com or *.githubusercontent.com only (host in lower case). */
+/* Redirects of the API request: https to api.github.com or github.com only
+ * (host in lower case). */
 bool is_allowed_redirect(const std::string &scheme, const std::string &host);
 
-/* Test aid: the value of OBS_MULTIVIEW_PRO_UPDATE_URL is used only when it
- * starts with "https://", "http://127.0.0.1:" or "http://localhost:" and has
- * no spaces or control characters; otherwise "" (use the GitHub API). */
+/* Test aid: the value of OBS_MULTIVIEW_PRO_UPDATE_URL is used only when it is
+ * http or https to a loopback host (127.0.0.1, localhost, [::1]), with an
+ * optional port and a path, and has no "@", backslash, spaces or control
+ * characters; otherwise "" (use the GitHub API). */
 std::string update_url_override(const char *env_value);

@@ -134,12 +134,6 @@ bool starts_with(const std::string &s, const char *prefix)
 	return s.size() >= p.size() && s.compare(0, p.size(), p) == 0;
 }
 
-bool ends_with(const std::string &s, const char *suffix)
-{
-	const std::string x(suffix);
-	return s.size() >= x.size() && s.compare(s.size() - x.size(), x.size(), x) == 0;
-}
-
 bool has_space_or_control(const std::string &s)
 {
 	for (char ch : s) {
@@ -264,22 +258,71 @@ std::vector<ReleaseInfo> newer_releases(const std::vector<ReleaseInfo> &releases
 	return out;
 }
 
-std::string strip_markdown_images(const std::string &markdown)
+namespace {
+
+/* For every '[' and '(' of `s`, the index of its matching ']' / ')' (each
+ * kind nested on its own, backslash escapes skipped), or npos. One pass, so
+ * hostile text full of unclosed brackets costs linear time. */
+std::vector<size_t> bracket_matches(const std::string &s)
+{
+	std::vector<size_t> match(s.size(), std::string::npos);
+	std::vector<size_t> squares;
+	std::vector<size_t> rounds;
+	for (size_t i = 0; i < s.size(); ++i) {
+		const char c = s[i];
+		if (c == '\\') {
+			++i;
+		} else if (c == '[') {
+			squares.push_back(i);
+		} else if (c == '(') {
+			rounds.push_back(i);
+		} else if (c == ']' && !squares.empty()) {
+			match[squares.back()] = i;
+			squares.pop_back();
+		} else if (c == ')' && !rounds.empty()) {
+			match[rounds.back()] = i;
+			rounds.pop_back();
+		}
+	}
+	return match;
+}
+
+constexpr int kMaxImageNesting = 8;
+
+std::string strip_images(const std::string &markdown, int depth)
 {
 	std::string out;
 	out.reserve(markdown.size());
+	const std::vector<size_t> match = bracket_matches(markdown);
 	size_t i = 0;
 	const size_t n = markdown.size();
 	while (i < n) {
-		/* ![alt](target) -> alt */
+		if (markdown[i] == '\\' && i + 1 < n) {
+			out.append(markdown, i, 2); /* an escaped character is never syntax */
+			i += 2;
+			continue;
+		}
+		/* ![alt](target), ![alt][ref], ![alt][], ![alt] -> alt. The alt text
+		 * is stripped too (images inside it); an unclosed "![" is dropped. */
 		if (markdown[i] == '!' && i + 1 < n && markdown[i + 1] == '[') {
-			const size_t close = markdown.find(']', i + 2);
-			if (close != std::string::npos && close + 1 < n && markdown[close + 1] == '(') {
-				out.append(markdown, i + 2, close - (i + 2));
-				const size_t end = markdown.find(')', close + 2);
-				i = end == std::string::npos ? n : end + 1;
+			const size_t close = match[i + 1];
+			if (close == std::string::npos) {
+				i += 2;
 				continue;
 			}
+			if (depth < kMaxImageNesting)
+				out += strip_images(markdown.substr(i + 2, close - (i + 2)), depth + 1);
+			size_t j = close + 1;
+			if (j < n && markdown[j] == '(') {
+				const size_t end = match[j];
+				j = end == std::string::npos ? n : end + 1;
+			} else if (j < n && markdown[j] == '[') {
+				const size_t end = markdown.find(']', j + 1);
+				if (end != std::string::npos)
+					j = end + 1;
+			}
+			i = j;
+			continue;
 		}
 		/* <img ...> (any case) -> nothing */
 		if (markdown[i] == '<' && i + 4 <= n && lower_ascii(markdown[i + 1]) == 'i' &&
@@ -294,6 +337,13 @@ std::string strip_markdown_images(const std::string &markdown)
 		++i;
 	}
 	return out;
+}
+
+} // namespace
+
+std::string strip_markdown_images(const std::string &markdown)
+{
+	return strip_images(markdown, 0);
 }
 
 std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t max_bytes)
@@ -442,16 +492,7 @@ bool is_allowed_release_url(const std::string &url)
 
 bool is_allowed_redirect(const std::string &scheme, const std::string &host)
 {
-	if (scheme != "https" || host.empty())
-		return false;
-	if (host == "github.com" || host == "githubusercontent.com")
-		return true;
-	for (const char *suffix : {".github.com", ".githubusercontent.com"}) {
-		const std::string sfx(suffix);
-		if (ends_with(host, suffix) && host.size() > sfx.size())
-			return true;
-	}
-	return false;
+	return scheme == "https" && (host == "api.github.com" || host == "github.com");
 }
 
 std::string update_url_override(const char *env_value)
@@ -459,9 +500,27 @@ std::string update_url_override(const char *env_value)
 	if (!env_value)
 		return std::string();
 	const std::string v(env_value);
-	if (v.size() > kMaxUrlLength || has_space_or_control(v))
+	if (v.size() > kMaxUrlLength || has_space_or_control(v) || v.find('@') != std::string::npos ||
+	    v.find('\\') != std::string::npos)
 		return std::string();
-	if (starts_with(v, "https://") || starts_with(v, "http://127.0.0.1:") || starts_with(v, "http://localhost:"))
-		return v;
+	for (const char *scheme : {"http://", "https://"}) {
+		if (!starts_with(v, scheme))
+			continue;
+		const std::string rest = v.substr(std::string(scheme).size());
+		for (const char *host : {"127.0.0.1", "localhost", "[::1]"}) {
+			if (!starts_with(rest, host))
+				continue;
+			size_t i = std::string(host).size();
+			if (i < rest.size() && rest[i] == ':') {
+				const size_t digits_start = ++i;
+				while (i < rest.size() && is_digit(rest[i]) && i - digits_start < 5)
+					++i;
+				if (i == digits_start)
+					return std::string();
+			}
+			/* A path must follow the loopback host (and port). */
+			return i < rest.size() && rest[i] == '/' ? v : std::string();
+		}
+	}
 	return std::string();
 }
