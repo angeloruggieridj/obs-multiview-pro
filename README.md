@@ -1,123 +1,106 @@
 # 🖥️ Multiview Pro for OBS
 
-**A broadcast-style multiview for OBS Studio: every scene live, program and preview with audio meters, and ON AIR / REC / clock / mixer tiles in the same grid.**
+**A broadcast-style multiview for OBS Studio: every scene live, audio meters, and ON AIR / REC / clock / mixer tiles in the same grid.**
 
-**Un multiview in stile regia per OBS Studio: tutte le scene in diretta, programma e anteprima con meter audio, e riquadri ON AIR / REC / orologio / mixer nella stessa griglia.**
+**Un multiview da regia per OBS Studio: tutte le scene in diretta, meter audio e riquadri IN ONDA / REC / orologio / mixer nella stessa griglia.**
 
 [English](#english) · [Italiano](#italiano)
 
 [![Build](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml/badge.svg)](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/angeloruggieridj/obs-multiview-pro)](https://github.com/angeloruggieridj/obs-multiview-pro/releases/latest)
 ![License](https://img.shields.io/badge/license-GPL%20v2%2B-blue)
 ![OBS Studio](https://img.shields.io/badge/OBS%20Studio-32.1%2B-302E31)
-[![Release](https://img.shields.io/github/v/release/angeloruggieridj/obs-multiview-pro)](https://github.com/angeloruggieridj/obs-multiview-pro/releases/latest)
 ![Tested](https://img.shields.io/badge/runtime%20tested-Windows%2011-informational)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
 
 <p align="center"><img src="docs/images/02-status8.png" alt="Multiview Pro with ON AIR, REC, clock and mixer tiles" width="860"></p>
 
-*Preset "8 tiles + status": 4 scenes, ON AIR, REC, clock and audio mixer. Demo content and demo status values.*
-
 <p align="center">
-  <img src="docs/images/01-scenes8.png" alt="Scenes-only 8 layout, native style" width="420">
+  <img src="docs/images/01-scenes8.png" alt="Scenes-only layout, native look" width="420">
   <img src="docs/images/03-scenes24.png" alt="24-scene layout" width="420">
 </p>
 
-*Left: scenes-only layout, same look as the native multiview. Right: 24 scenes.*
-
 <p align="center">
-  <img src="docs/images/05-settings.png" alt="Settings dialog" width="330">
-  <img src="docs/images/07-updates.png" alt="Updates tab with change log" width="330">
+  <img src="docs/images/05-settings.png" alt="Settings" width="330">
+  <img src="docs/images/07-updates.png" alt="Updates and change log" width="330">
 </p>
 
-*Settings: border colour, label and meter opacity. Updates: check and change log. The release shown is a demo.*
+*Demo content and demo status values. Top: 8 tiles + status. Middle: scenes only (native look) and 24 scenes. Bottom: settings and updates.*
 
 ---
 
 ## English
 
-**Contents:** [Why](#why) · [Features](#features) · [Presets](#presets) · [Install](#install) · [Getting started](#getting-started) · [Controls](#controls) · [Status](#status-and-limits) · [Build](#build-from-source) · [License](#license)
-
-### Why
-
-The native OBS multiview is fixed: 8 or 24 scenes, no audio meters, no clock, no live or recording state. Hardware switchers show all of that. This plugin opens its own multiview window that looks like the native one, then adds what a control room needs.
+**Contents:** [Features](#features) · [Presets](#presets) · [Install](#install) · [Use](#use) · [Settings and updates](#settings-and-updates) · [Limits](#limits) · [Build](#build-from-source) · [License](#license)
 
 ### Features
 
-- **Native look.** Same tiles, colours, red program and green preview outlines, safe areas and scene names as the built-in multiview. Scenes are drawn every frame.
-- **Presets.** 4, 8, 16, 24 and 32 scenes, or the same grids with four status tiles. Pick from thumbnails.
-- **Audio meters.** Stereo meters with dB scale on program and preview, native colours and ballistics. A mixer tile lists the global audio devices.
-- **ON AIR and REC tiles.** Big red state, elapsed time, bitrate, dropped frames and connection state, service name, recording file and size.
-- **Clock tile.** Local time.
-- **Editing in place.** Click to switch, drag tiles to swap, right-click to assign or remove a scene, click a tile name to pick another scene.
-- **Settings.** Choose the border colour (the frame under and around the tiles), the label opacity and the meter opacity. Changes show live in every window.
-- **Remembers everything.** Preset, options and tile assignments are saved per window and per scene collection.
-- **Update check.** Tells you when a new version is out and shows its change log in the settings (automatic once a day, or on demand). It never downloads or installs anything: the download page opens in your browser.
-- **Light.** The draw path allocates nothing per frame and the audio callbacks only write atomics. Meters off means no audio work at all.
+- **Native look**: same tiles, outlines, safe areas and scene names as the built-in multiview; every scene drawn each frame.
+- **Audio**: stereo meters with dB scale on program and preview; a mixer tile with the global audio devices.
+- **Status tiles**: ON AIR (time, bitrate, dropped frames, connection, service), REC (time, file, size), clock.
+- **Editing in place**: click, double-click, drag to swap, right-click menu, click a tile name to pick its scene.
+- **Remembers** preset, options and tile assignments per window and per scene collection.
+- **Light**: nothing allocated per frame in the draw path; meters off means no audio work.
+- **Languages**: English and Italian, following the OBS language.
 
 ### Presets
 
-<p align="center"><img src="docs/images/04-presets.png" alt="Preset picker" width="700"></p>
-
-| Family | Sizes | Tiles |
+| Family | Scenes | Tiles |
 | --- | --- | --- |
-| Scenes only | 4 · 8 · 16 · 24 · 32 | program, preview, N scenes (8 and 24 identical to native) |
-| With status | 4 · 12 · 20 · 28 scenes | program, preview, N scenes, ON AIR, REC, clock, mixer (same grids as 8 · 16 · 24 · 32) |
+| Scenes only | 4 · 8 · 16 · 24 · 32 | program, preview, scenes (8 and 24 identical to native) |
+| With status | 4 · 12 · 20 · 28 | program, preview, scenes, ON AIR, REC, clock, mixer |
+
+<p align="center"><img src="docs/images/04-presets.png" alt="Preset picker" width="620"></p>
 
 ### Install
 
-Download the zip for your system from the [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) page and unzip it here:
+Download the zip for your system from [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) and unzip it into the plugins folder. Close OBS first. Needs OBS Studio 32.1 or newer.
 
-| OS | Download | Unzip into | Result |
-| --- | --- | --- | --- |
-| Windows | `obs-multiview-pro-<version>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
-| macOS | `obs-multiview-pro-<version>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
-| Linux | `obs-multiview-pro-<version>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
+| OS | Zip | Unzip into |
+| --- | --- | --- |
+| Windows | `…-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| macOS | `…-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` |
+| Linux | `…-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` |
 
-Close OBS before copying. Needs OBS Studio 32.1 or newer. `SHA256SUMS.txt` on the release page lists the checksum of every zip. The binaries are not signed: macOS may ask you to allow the plugin in *System Settings → Privacy & Security*; if it says the plugin is damaged, run `xattr -dr com.apple.quarantine obs-multiview-pro.plugin` in the plugins folder. The Linux zip is built for Ubuntu 24.04 with the OBS Studio PPA (not Flatpak or Snap). To update, close OBS and unzip the new version over the old one.
+`SHA256SUMS.txt` lists the checksums. The binaries are not signed: on macOS allow the plugin in *System Settings → Privacy & Security*, or run `xattr -dr com.apple.quarantine obs-multiview-pro.plugin`. The Linux zip is for Ubuntu 24.04 with the OBS Studio PPA (not Flatpak or Snap).
 
-### Getting started
+### Use
 
-1. Open OBS and choose **Tools → Multiview**. A new window opens. You can open several.
-2. Right-click the window → **Layout…** and pick a preset.
-3. Optional: turn **Audio meters** and **Safe areas** on or off from the same menu.
-
-### Controls
+Open **Tools → Multiview** (several windows are allowed), then right-click the window.
 
 | Action | Result |
 | --- | --- |
 | Click a scene tile | Studio mode: set preview. Otherwise: set program |
 | Double-click (studio mode) | Preview, then transition to program |
 | Drag a tile onto another | Swap the two scenes |
-| Right-click a tile | Assign, remove or add a scene; layout; meters; safe areas; settings |
+| Right-click | Layout, assign/remove scene, meters, safe areas, settings |
 | Click a tile name | Choose the scene for that tile |
 
-Scenes with *Show in Multiview* off are skipped, like the native one.
+Scenes with *Show in Multiview* off are skipped, like the native multiview.
 
-**Settings.** Open **Tools → Multiview Settings...** or right-click a window → **Settings...**. *Border colour* is the frame under and around the tiles (default grey; the red program and green preview outlines do not change). *Label opacity* is the opacity of scene names, Preview and Program, 0–100 % (default 50 %, the native look; the label background follows it; 0 hides the labels and also removes the click-on-name scene menu). *Meter opacity* is the opacity of the audio meters, 0–100 % (default 100 %); every element fades on its own, so the contrast between lit and unlit parts drops at low values. The settings apply to all windows and are saved.
+### Settings and updates
 
-**Updates.** The *Updates* tab shows the installed version and the result of the last check: *Check for updates now* asks GitHub at once; *Check for updates automatically* (on by default) does it once a day, 60 seconds after OBS has finished loading at the earliest and never while streaming or recording. When a newer version exists, the tab shows the change log of every newer release, *Open download page* opens its release page in your browser and *Skip this version* stops the reminder until a newer one comes out. An automatic check never opens a window: it writes one line in the OBS log, and the window menu gets an *Update available* entry (the Tools menu entry becomes *Multiview Settings... (update available)*). *Include pre-releases* also reports beta and release-candidate versions.
+**Tools → Multiview Settings...** (or right-click → *Settings...*):
 
-**Privacy.** A check is one HTTPS GET to `api.github.com` (the public list of this project's releases), made with libcurl (the one bundled with OBS on Windows, the system libcurl on macOS and Linux) with certificate verification on; certificate revocation lookups are deliberately off, because on Windows they would run inside OBS's user interface thread and could freeze it. The request carries only these headers: `Accept: application/vnd.github+json`, `Accept-Language: en`, `User-Agent: obs-multiview-pro/<version>` and `X-GitHub-Api-Version: 2022-11-28`; no cookies, no account, no system details. Like any connection, it lets GitHub see your IP address. Release notes are shown as text: no image or other resource they mention is ever loaded. To turn the automatic check off: *Settings → Updates*, clear *Check for updates automatically*, then OK.
+- **Appearance**: border colour (the frame under the tiles), label opacity (default 50 %, 0 hides labels and the click-on-name menu), meter opacity (default 100 %). Changes show live in every window.
+- **Updates**: *Check for updates* now, or automatically once a day (on by default, never while streaming or recording). A newer version shows its change log and *Open download page*; *Skip this version* stops the reminder. An automatic check never opens a window: it adds a log line and an *Update available* menu entry.
+- **Privacy**: a check is one HTTPS request to `api.github.com`, sending only the plugin version in the User-Agent (GitHub sees your IP, as for any connection). Nothing is downloaded or installed. To turn it off clear *Check for updates automatically*. Details in [SECURITY.md](SECURITY.md).
 
-### Status and limits
+### Limits
 
-Version 1.0. Runtime-tested on **Windows 11 with OBS 32.2** only. The macOS and Linux builds are compiled and unit-tested on CI but have never been run: reports from those systems are welcome.
-
-- Wayland: the Linux release is built with Qt 6.4 (Ubuntu 24.04) and does not draw under a Wayland session (the display needs Qt 6.9 or newer). Start OBS with `QT_QPA_PLATFORM=xcb`.
-- Meters follow the program mix (track 1) and, for preview, the audio sources of the preview scene. Media sources set to *Restart when activated* stay silent off air, as in the OBS mixer. There are no meters on the other scene tiles yet.
-- OBS has no cache indicator like hardware switchers: the connection state comes from the output congestion.
-- If the window opens while streaming or recording, durations are derived from the output frame counter.
-- No NDI state tile.
+- Runtime-tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds compile and pass the unit tests on CI but have never been run: reports are welcome.
+- Linux under Wayland: the window stays empty (needs Qt 6.9, the build uses 6.4). Start OBS with `QT_QPA_PLATFORM=xcb`.
+- Meters: program follows the program mix (track 1); preview follows the audio sources of the preview scene; media set to *Restart when activated* are silent off air. No meters on the other scene tiles.
+- *CACHE* shows the output congestion (OBS has no cache indicator). No NDI state tile.
 
 ### Build from source
 
 ```
-cmake --preset windows-x64        # macos | ubuntu-x86_64
+cmake --preset windows-x64        # or macos | ubuntu-x86_64
 cmake --build --preset windows-x64
 ctest --test-dir build_x64 -C RelWithDebInfo
 ```
 
-CMake downloads OBS, its dependencies and Qt on Windows and macOS. On Ubuntu install `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` and `libcurl4-openssl-dev` first. See [docs/ci-notes.md](docs/ci-notes.md) and [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
+CMake downloads OBS, its dependencies and Qt on Windows and macOS. On Ubuntu install `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` and `libcurl4-openssl-dev` first. More in [docs/ci-notes.md](docs/ci-notes.md) and [docs/dev-environment-notes.md](docs/dev-environment-notes.md). To add a language see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### License
 
@@ -129,89 +112,75 @@ GPL-2.0-or-later, see [LICENSE](LICENSE).
 
 ## Italiano
 
-**Indice:** [Perché](#perché) · [Funzionalità](#funzionalità) · [Preset](#preset) · [Installazione](#installazione) · [Primi passi](#primi-passi) · [Comandi](#comandi) · [Stato](#stato-e-limiti) · [Compilare](#compilare-dai-sorgenti) · [Licenza](#licenza)
-
-### Perché
-
-Il multiview nativo di OBS è fisso: 8 o 24 scene, nessun meter audio, nessun orologio, nessuno stato di live o registrazione. Gli switcher hardware mostrano tutto questo. Il plugin apre un proprio multiview con lo stesso aspetto di quello nativo e aggiunge ciò che serve a una regia.
+**Indice:** [Funzionalità](#funzionalità) · [Preset](#preset) · [Installazione](#installazione) · [Uso](#uso) · [Impostazioni e aggiornamenti](#impostazioni-e-aggiornamenti) · [Limiti](#limiti) · [Compilare](#compilare-dai-sorgenti) · [Licenza](#licenza)
 
 ### Funzionalità
 
-- **Aspetto nativo.** Stessi riquadri, colori, contorni rosso (programma) e verde (anteprima), margini di sicurezza e nomi delle scene del multiview integrato. Le scene sono disegnate a ogni frame.
-- **Preset.** 4, 8, 16, 24 e 32 scene, oppure le stesse griglie con quattro riquadri di stato. Si sceglie da miniature.
-- **Meter audio.** Meter stereo con scala in dB su programma e anteprima, colori e dinamica come i nativi. Un riquadro mixer elenca i dispositivi audio globali.
-- **Riquadri ON AIR e REC.** Stato rosso grande, tempo trascorso, bitrate, frame persi e stato della connessione, nome del servizio, file e dimensione della registrazione.
-- **Riquadro orologio.** Ora locale.
-- **Modifica sul posto.** Clic per cambiare scena, trascina per scambiare, tasto destro per assegnare o togliere una scena, clic sul nome per sceglierne un'altra.
-- **Impostazioni.** Scegli il colore del bordo (la cornice sotto e attorno ai riquadri), l'opacità delle etichette e quella dei meter. Le modifiche si vedono subito in tutte le finestre.
-- **Ricorda tutto.** Preset, opzioni e assegnazioni sono salvati per finestra e per collezione di scene.
-- **Verifica aggiornamenti.** Ti avvisa quando esce una nuova versione e ne mostra il change log nelle impostazioni (automatica una volta al giorno, oppure a richiesta). Non scarica e non installa mai nulla: la pagina di download si apre nel browser.
-- **Leggero.** Il disegno non alloca memoria a ogni frame e i callback audio scrivono solo valori atomici. Con i meter spenti non c'è alcun lavoro audio.
+- **Aspetto nativo**: stessi riquadri, contorni, margini di sicurezza e nomi delle scene della vista multipla di OBS; ogni scena è aggiornata a ogni frame.
+- **Audio**: meter stereo con scala in dB su programma e anteprima; un riquadro mixer con i dispositivi audio globali.
+- **Riquadri di stato**: IN ONDA (tempo, bitrate, frame persi, connessione, servizio), REC (tempo, file, dimensione), orologio.
+- **Modifica sul posto**: clic, doppio clic, trascinamento per scambiare, menu col tasto destro, clic sul nome per scegliere la scena.
+- **Ricorda** preset, opzioni e assegnazioni per finestra e per collezione di scene.
+- **Leggero**: il disegno non alloca memoria a ogni frame; con i meter spenti non c'è lavoro audio.
+- **Lingue**: italiano e inglese, secondo la lingua di OBS.
 
 ### Preset
 
-<p align="center"><img src="docs/images/04-presets.png" alt="Selettore dei preset" width="700"></p>
-
-| Famiglia | Dimensioni | Riquadri |
+| Famiglia | Scene | Riquadri |
 | --- | --- | --- |
-| Solo scene | 4 · 8 · 16 · 24 · 32 | programma, anteprima, N scene (8 e 24 identici al nativo) |
-| Con stato | 4 · 12 · 20 · 28 scene | programma, anteprima, N scene, ON AIR, REC, orologio, mixer (stesse griglie di 8 · 16 · 24 · 32) |
+| Solo scene | 4 · 8 · 16 · 24 · 32 | programma, anteprima, scene (8 e 24 identici a quelli di OBS) |
+| Con stato | 4 · 12 · 20 · 28 | programma, anteprima, scene, IN ONDA, REC, orologio, mixer |
 
 ### Installazione
 
-Scarica lo zip del tuo sistema dalla pagina [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) ed estrailo qui:
+Scarica lo zip per il tuo sistema da [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) ed estrailo nella cartella dei plugin, a OBS chiuso. Serve OBS Studio 32.1 o successivo.
 
-| Sistema | Download | Estrai in | Risultato |
-| --- | --- | --- | --- |
-| Windows | `obs-multiview-pro-<versione>-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` | `...\plugins\obs-multiview-pro\bin\64bit\obs-multiview-pro.dll` |
-| macOS | `obs-multiview-pro-<versione>-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` | `.../plugins/obs-multiview-pro.plugin` |
-| Linux | `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` | `.../plugins/obs-multiview-pro/bin/64bit/obs-multiview-pro.so` |
+| Sistema | Zip | Estrai in |
+| --- | --- | --- |
+| Windows | `…-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| macOS | `…-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` |
+| Linux | `…-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` |
 
-Chiudi OBS prima di copiare. Serve OBS Studio 32.1 o successivo. `SHA256SUMS.txt` nella pagina della release elenca il checksum di ogni zip. I binari non sono firmati: macOS può chiedere di consentire il plugin in *Impostazioni di Sistema → Privacy e sicurezza*; se dice che il plugin è danneggiato, esegui `xattr -dr com.apple.quarantine obs-multiview-pro.plugin` nella cartella dei plugin. Lo zip per Linux è compilato per Ubuntu 24.04 con il PPA di OBS Studio (non Flatpak né Snap). Per aggiornare chiudi OBS ed estrai la nuova versione sopra la vecchia.
+`SHA256SUMS.txt` contiene i checksum. I binari non sono firmati: su macOS consenti il plugin in *Impostazioni di Sistema → Privacy e sicurezza*, oppure esegui `xattr -dr com.apple.quarantine obs-multiview-pro.plugin`. Lo zip per Linux è per Ubuntu 24.04 con il PPA di OBS Studio (non Flatpak né Snap).
 
-### Primi passi
+### Uso
 
-1. Apri OBS e scegli **Strumenti → Multiview**. Si apre una finestra; se ne possono aprire più di una.
-2. Tasto destro sulla finestra → **Layout…** e scegli un preset.
-3. Facoltativo: attiva o disattiva **Audio meters** e **Safe areas** dallo stesso menu.
-
-### Comandi
+Apri **Strumenti → Multiview** (puoi aprire più finestre), poi clicca col tasto destro sulla finestra.
 
 | Azione | Risultato |
 | --- | --- |
-| Clic su un riquadro scena | Studio mode: imposta l'anteprima. Altrimenti: imposta il programma |
-| Doppio clic (studio mode) | Anteprima, poi transizione al programma |
+| Clic su un riquadro scena | Modalità studio: imposta l'anteprima. Altrimenti: imposta il programma |
+| Doppio clic (modalità studio) | Anteprima, poi transizione al programma |
 | Trascina un riquadro su un altro | Scambia le due scene |
-| Tasto destro su un riquadro | Assegna, togli o aggiungi una scena; layout; meter; margini di sicurezza; impostazioni |
+| Tasto destro | Layout, assegna/rimuovi scena, meter, margini di sicurezza, impostazioni |
 | Clic sul nome di un riquadro | Sceglie la scena di quel riquadro |
 
-Le scene con *Mostra nel multiview* disattivato vengono saltate, come nel nativo.
+Le scene con *Mostra in Vista multipla* disattivato vengono saltate, come nella vista multipla di OBS.
 
-**Impostazioni.** Apri **Strumenti → Multiview Settings...** oppure tasto destro sulla finestra → **Settings...**. *Border colour* è la cornice sotto e attorno ai riquadri (grigio di default; i contorni rosso del programma e verde dell'anteprima non cambiano). *Label opacity* è l'opacità di nomi delle scene, Preview e Program, 0–100 % (default 50 %, l'aspetto nativo; lo sfondo dell'etichetta la segue; 0 nasconde le etichette e toglie anche il menu delle scene al clic sul nome). *Meter opacity* è l'opacità dei meter audio, 0–100 % (default 100 %); ogni elemento sfuma per conto suo, quindi con valori bassi il contrasto tra parti accese e spente diminuisce. Le impostazioni valgono per tutte le finestre e vengono salvate.
+### Impostazioni e aggiornamenti
 
-**Aggiornamenti.** La scheda *Updates* mostra la versione installata e l'esito dell'ultima verifica: *Check for updates now* interroga subito GitHub; *Check for updates automatically* (attiva di default) lo fa una volta al giorno, non prima di 60 secondi dalla fine del caricamento di OBS e mai durante una diretta o una registrazione. Se esiste una versione più recente, la scheda mostra il change log di tutte le release più nuove, *Open download page* apre la pagina della release nel browser e *Skip this version* sospende l'avviso finché non esce una versione ancora più nuova. Una verifica automatica non apre mai finestre: scrive una riga nel log di OBS e il menu della finestra mostra la voce *Update available* (la voce del menu Strumenti diventa *Multiview Settings... (update available)*). *Include pre-releases* segnala anche le versioni beta e release candidate.
+**Strumenti → Impostazioni Multiview…** (o tasto destro → *Impostazioni…*):
 
-**Privacy.** Una verifica è una sola richiesta HTTPS GET ad `api.github.com` (l'elenco pubblico delle release del progetto), fatta con libcurl (quella inclusa in OBS su Windows, quella di sistema su macOS e Linux) con la verifica dei certificati attiva; il controllo di revoca dei certificati è disattivato di proposito, perché su Windows girerebbe nel thread dell'interfaccia di OBS e potrebbe bloccarla. La richiesta contiene solo queste intestazioni: `Accept: application/vnd.github+json`, `Accept-Language: en`, `User-Agent: obs-multiview-pro/<versione>` e `X-GitHub-Api-Version: 2022-11-28`; nessun cookie, nessun account, nessun dato del sistema. Come ogni connessione, permette a GitHub di vedere il tuo indirizzo IP. Le note di rilascio sono mostrate come testo: nessuna immagine o altra risorsa citata viene mai caricata. Per disattivare la verifica automatica: *Settings → Updates*, togli la spunta a *Check for updates automatically*, poi OK.
+- **Aspetto**: colore del bordo (la cornice sotto i riquadri), opacità delle etichette (predefinita 50%; con 0 le etichette spariscono e non si può più cliccare sul nome), opacità dei meter (predefinita 100%). Le modifiche si vedono subito in tutte le finestre.
+- **Aggiornamenti**: *Controlla aggiornamenti* subito, oppure in automatico una volta al giorno (attivo di default, mai durante una diretta o una registrazione). Se c'è una versione nuova compaiono le novità e *Apri pagina di download*; *Salta questa versione* sospende l'avviso. Il controllo automatico non apre mai finestre: scrive una riga nel log e aggiunge la voce *Aggiornamento disponibile* al menu.
+- **Privacy**: ogni controllo è una sola richiesta HTTPS ad `api.github.com` che invia solo la versione del plugin nello User-Agent (GitHub vede il tuo IP, come in ogni connessione). Il plugin non scarica né installa nulla. Per disattivarlo togli la spunta a *Controlla gli aggiornamenti automaticamente*. Dettagli in [SECURITY.md](SECURITY.md).
 
-### Stato e limiti
+### Limiti
 
-Versione 1.0. Provata in esecuzione solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux sono compilate e passano i test unitari in CI, ma non sono mai state eseguite: le segnalazioni da quei sistemi sono benvenute.
-
-- Wayland: la release per Linux è compilata con Qt 6.4 (Ubuntu 24.04) e non disegna in una sessione Wayland (serve Qt 6.9 o successivo). Avvia OBS con `QT_QPA_PLATFORM=xcb`.
-- I meter seguono il mix del programma (traccia 1) e, per l'anteprima, le sorgenti audio della scena in anteprima. I file multimediali con *Riavvia quando attivata* restano muti fuori onda, come nel mixer di OBS. Per ora non ci sono meter sugli altri riquadri scena.
-- OBS non ha un indicatore di cache come gli switcher hardware: lo stato della connessione deriva dalla congestione dell'uscita.
-- Se la finestra si apre durante una diretta o una registrazione, le durate si ricavano dal contatore di frame dell'uscita.
-- Nessun riquadro con lo stato NDI.
+- Provato in esecuzione solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux compilano e passano i test unitari in CI ma non sono mai state avviate: le segnalazioni sono benvenute.
+- Linux con Wayland: la finestra resta vuota (serve Qt 6.9, la build usa la 6.4). Avvia OBS con `QT_QPA_PLATFORM=xcb`.
+- Meter: il programma segue il mix del programma (traccia 1); l'anteprima segue le sorgenti audio della scena in anteprima; i file multimediali con *Riavvia la riproduzione quando la fonte torna attiva* restano muti fuori onda. Gli altri riquadri scena non hanno meter.
+- *CACHE* mostra la congestione dell'uscita (OBS non ha un indicatore di cache). Nessun riquadro per lo stato NDI.
 
 ### Compilare dai sorgenti
 
 ```
-cmake --preset windows-x64        # macos | ubuntu-x86_64
+cmake --preset windows-x64        # oppure macos | ubuntu-x86_64
 cmake --build --preset windows-x64
 ctest --test-dir build_x64 -C RelWithDebInfo
 ```
 
-Su Windows e macOS CMake scarica OBS, le dipendenze e Qt. Su Ubuntu installa prima `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` e `libcurl4-openssl-dev`. Vedi [docs/ci-notes.md](docs/ci-notes.md) e [docs/dev-environment-notes.md](docs/dev-environment-notes.md).
+Su Windows e macOS CMake scarica OBS, le dipendenze e Qt. Su Ubuntu installa prima `libobs-dev`, `qt6-base-dev`, `qt6-base-private-dev` e `libcurl4-openssl-dev`. Altri dettagli in [docs/ci-notes.md](docs/ci-notes.md) e [docs/dev-environment-notes.md](docs/dev-environment-notes.md). Per aggiungere una lingua vedi [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ### Licenza
 
