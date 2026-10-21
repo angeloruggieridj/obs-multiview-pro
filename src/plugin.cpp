@@ -8,9 +8,11 @@
 #include <QObject>
 
 #include <algorithm>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "i18n.hpp"
 #include "multiview_window.hpp"
 #include "settings_dialog.hpp"
 #include "settings_store.hpp"
@@ -18,6 +20,8 @@
 #include "update_manager.hpp"
 
 OBS_DECLARE_MODULE()
+/* Texts: data/locale/<lang>.ini, English for whatever a translation lacks. */
+OBS_MODULE_USE_DEFAULT_LOCALE("obs-multiview-pro", "en-US")
 
 /* All state below is touched on the Qt UI thread only (load, menu trigger,
  * frontend events and unload all run there). */
@@ -30,8 +34,9 @@ static QMetaObject::Connection g_marker_connection;
 /* Set once EXIT was handled: OBS has cleared the frontend callbacks by then. */
 static bool g_exit_handled = false;
 
-static const char *kSettingsText = "Multiview Settings...";
-static const char *kSettingsUpdateText = "Multiview Settings... (update available)";
+/* The plain Tools entry text, kept for obs_module_unload: OBS frees the
+ * module's texts before it calls the unload. */
+static QString g_settings_text;
 
 /* The Tools menu entry tells about an update found by a check. */
 static void update_settings_action_text()
@@ -40,7 +45,7 @@ static void update_settings_action_text()
 		return;
 	const UpdateManager *m = UpdateManager::existing();
 	const bool marker = m && !m->marker_version().empty();
-	g_settings_action->setText(QString::fromUtf8(marker ? kSettingsUpdateText : kSettingsText));
+	g_settings_action->setText(marker ? T("Tools.SettingsUpdateAvailable") : g_settings_text);
 }
 
 static void start_update_checks()
@@ -111,7 +116,8 @@ static void frontend_event(enum obs_frontend_event event, void *)
 
 void register_menu_action()
 {
-	auto *action = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction("Multiview"));
+	auto *action =
+		static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(T("Tools.Multiview").toUtf8().constData()));
 	if (!action) {
 		obs_log(LOG_ERROR, "could not create the 'Tools > Multiview' menu action");
 		return;
@@ -120,7 +126,9 @@ void register_menu_action()
 	g_connection = QObject::connect(action, &QAction::triggered, action, [] { open_multiview_window(); });
 	obs_log(LOG_INFO, "menu action 'Tools > Multiview' registered");
 
-	auto *settings = static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(kSettingsText));
+	g_settings_text = T("Tools.Settings");
+	auto *settings =
+		static_cast<QAction *>(obs_frontend_add_tools_menu_qaction(g_settings_text.toUtf8().constData()));
 	if (!settings) {
 		obs_log(LOG_ERROR, "could not create the 'Tools > Multiview Settings...' menu action");
 		return;
@@ -134,8 +142,28 @@ void register_menu_action()
 		});
 }
 
+/* Says in the log whether the locale files were found (they sit next to the
+ * plugin binary: data/locale on Windows and Linux, Resources/locale on macOS). */
+static void log_locale()
+{
+	const char *text = nullptr;
+	if (!obs_module_get_string("Tools.Multiview", &text)) {
+		obs_log(LOG_WARNING, "locale files not found: menus show text keys instead of texts");
+		return;
+	}
+	const char *language = obs_get_locale();
+	const std::string name = std::string("locale/") + (language ? language : "") + ".ini";
+	char *file = obs_module_file(name.c_str());
+	if (file)
+		obs_log(LOG_INFO, "texts loaded for language %s", language);
+	else
+		obs_log(LOG_INFO, "texts loaded in English (no translation for %s)", language ? language : "?");
+	bfree(file);
+}
+
 bool obs_module_load(void)
 {
+	log_locale();
 	register_menu_action();
 	obs_frontend_add_event_callback(frontend_event, nullptr);
 	obs_log(LOG_INFO, "plugin loaded (version %s)", PLUGIN_VERSION);
@@ -154,7 +182,7 @@ void obs_module_unload(void)
 	QObject::disconnect(g_settings_connection);
 	g_settings_connection = QMetaObject::Connection();
 	if (g_settings_action)
-		g_settings_action->setText(QString::fromUtf8(kSettingsText));
+		g_settings_action->setText(g_settings_text);
 	g_settings_action.clear();
 	close_settings_dialog();
 	stop_update_checks(); /* before the store: it may still save the last check time */

@@ -41,7 +41,7 @@ endif()
 
 target_sources(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE src/plugin.cpp src/multiview_window.cpp src/multiview_window.hpp
+  PRIVATE src/plugin.cpp src/i18n.cpp src/i18n.hpp src/multiview_window.cpp src/multiview_window.hpp
     src/obs_state.cpp src/obs_state.hpp src/click_target.cpp src/click_target.hpp src/layout_model.cpp
     src/layout_model.hpp src/tile_assignment.cpp src/tile_assignment.hpp src/scene_ref.hpp src/multiview_renderer.cpp src/multiview_renderer.hpp src/preset_picker.cpp src/preset_picker.hpp
     src/label_metrics.cpp src/label_metrics.hpp src/label_cache.cpp src/label_cache.hpp
