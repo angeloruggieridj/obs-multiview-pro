@@ -15,6 +15,7 @@ add_executable(
   update_logic_test.cpp
   locale_test.cpp
   tile_meters_test.cpp
+  collection_gate_test.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/layout_model.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/click_target.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_assignment.cpp
@@ -27,6 +28,7 @@ add_executable(
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/appearance.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/update_logic.cpp
   ${CMAKE_CURRENT_SOURCE_DIR}/../src/tile_meters.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/../src/collection_gate.cpp
 )
 # doctest is third-party: SYSTEM keeps its headers out of the -Werror warning set.
 target_include_directories(unit_tests SYSTEM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/doctest)
