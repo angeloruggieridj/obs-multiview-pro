@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <plugin-support.h>
@@ -17,7 +18,6 @@
 #include "update_manager.hpp"
 
 OBS_DECLARE_MODULE()
-OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
 /* All state below is touched on the Qt UI thread only (load, menu trigger,
  * frontend events and unload all run there). */
@@ -27,6 +27,8 @@ static QPointer<QAction> g_settings_action;
 static QMetaObject::Connection g_settings_connection;
 static std::vector<QPointer<MultiviewWindow>> g_windows;
 static QMetaObject::Connection g_marker_connection;
+/* Set once EXIT was handled: OBS has cleared the frontend callbacks by then. */
+static bool g_exit_handled = false;
 
 static const char *kSettingsText = "Multiview Settings...";
 static const char *kSettingsUpdateText = "Multiview Settings... (update available)";
@@ -100,6 +102,7 @@ static void frontend_event(enum obs_frontend_event event, void *)
 	if (event == OBS_FRONTEND_EVENT_FINISHED_LOADING) {
 		start_update_checks(); /* the first automatic one waits 60 s */
 	} else if (event == OBS_FRONTEND_EVENT_EXIT) {
+		g_exit_handled = true;
 		close_settings_dialog(); /* takes any preview back before the windows go */
 		stop_update_checks();
 		close_all_windows();
@@ -141,7 +144,8 @@ bool obs_module_load(void)
 
 void obs_module_unload(void)
 {
-	obs_frontend_remove_event_callback(frontend_event, nullptr);
+	if (!g_exit_handled) /* after EXIT the frontend API is already gone */
+		obs_frontend_remove_event_callback(frontend_event, nullptr);
 	/* The action itself belongs to OBS's menu; just make sure nothing in this
 	 * DLL stays connected to it. */
 	QObject::disconnect(g_connection);
