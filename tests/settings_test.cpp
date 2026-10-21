@@ -639,6 +639,68 @@ TEST_CASE("state_settings_merge_always_on_top_touched_vs_untouched")
 	CHECK_FALSE(base.appearance.always_on_top);
 }
 
+TEST_CASE("state_settings_tile_meters_roundtrip")
+{
+	for (const bool on : {true, false}) {
+		SettingsFile f;
+		f.appearance = custom_appearance();
+		f.appearance.tile_meters = on;
+		f.instances[0] = sample();
+		ParseStatus st = ParseStatus::Corrupt;
+		const std::string json = to_json(f);
+		CHECK(json.find(on ? "\"tile_meters\": true" : "\"tile_meters\": false") != std::string::npos);
+		const SettingsFile back = from_json(json, &st);
+		CHECK(st == ParseStatus::Ok);
+		CHECK(back.appearance.tile_meters == on);
+		CHECK(back == f);
+		CHECK(to_json(back) == json);
+	}
+	/* the default is written too, and read back as the default */
+	CHECK(to_json(SettingsFile()).find(kDefaultTileMeters ? "\"tile_meters\": true" : "\"tile_meters\": false") !=
+	      std::string::npos);
+	CHECK(from_json(to_json(SettingsFile())).appearance.tile_meters == kDefaultTileMeters);
+}
+
+TEST_CASE("state_settings_tile_meters_old_files_and_hostile_values")
+{
+	auto load = [](const std::string &body) {
+		ParseStatus st = ParseStatus::Corrupt;
+		INFO("body: " << body);
+		const SettingsFile f = from_json("{\"version\":1,\"global\":{\"appearance\":{" + body + "}}}", &st);
+		CHECK(st == ParseStatus::Ok);
+		return f.appearance;
+	};
+	/* a 1.0.1 file: no key -> the default, the other values kept */
+	Appearance old = load("\"border_color\":\"#336699\",\"label_opacity\":20,\"meter_opacity\":40,"
+			      "\"always_on_top\":true");
+	CHECK(old.tile_meters == kDefaultTileMeters);
+	CHECK(old.always_on_top);
+	CHECK(old.label_opacity == 20);
+	CHECK(from_json("{\"version\":1}").appearance.tile_meters == kDefaultTileMeters);
+	CHECK(load("\"tile_meters\":true").tile_meters);
+	CHECK_FALSE(load("\"tile_meters\":false").tile_meters);
+	for (const char *bad : {"\"true\"", "\"false\"", "1", "0", "null", "[false]", "{\"on\":false}", "\"\"", "-1e999"})
+		CHECK(load(std::string("\"tile_meters\":") + bad).tile_meters == kDefaultTileMeters);
+	/* a bad value does not disturb the others */
+	const Appearance mixed = load("\"tile_meters\":\"no\",\"meter_opacity\":30");
+	CHECK(mixed.tile_meters == kDefaultTileMeters);
+	CHECK(mixed.meter_opacity == 30);
+	/* duplicates: the last one wins */
+	CHECK_FALSE(load("\"tile_meters\":true,\"tile_meters\":false").tile_meters);
+	CHECK(load("\"tile_meters\":false,\"tile_meters\":true").tile_meters);
+}
+
+TEST_CASE("state_settings_merge_tile_meters_touched_vs_untouched")
+{
+	SettingsFile base;
+	base.appearance.tile_meters = !kDefaultTileMeters;
+	SettingsFile over; /* default */
+	merge_settings(base, over, false);
+	CHECK(base.appearance.tile_meters == !kDefaultTileMeters); /* not touched: the file's value stays */
+	merge_settings(base, over, true);
+	CHECK(base.appearance.tile_meters == kDefaultTileMeters);
+}
+
 /* ---- Update check settings ------------------------------------------------------ */
 
 static UpdateSettings custom_updates()

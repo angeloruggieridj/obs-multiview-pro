@@ -112,3 +112,58 @@ TEST_CASE("appearance_always_on_top")
 	a.always_on_top = false;
 	CHECK(a == Appearance());
 }
+
+TEST_CASE("appearance_follow_saved_toggles")
+{
+	/* The settings dialog holds an unsaved preview; a window menu then saves a
+	 * toggle. The dialog must show (and preview to every window) the saved
+	 * toggles with the rest of its preview. */
+	Appearance preview;
+	preview.border_rgb = 0x123456;
+	preview.label_opacity = 80;
+
+	/* saved off, preview on: the menu unticks -> off everywhere */
+	preview.always_on_top = true;
+	Appearance saved;
+	saved.always_on_top = false;
+	Appearance shown = follow_saved_toggles(preview, saved);
+	CHECK_FALSE(shown.always_on_top);
+	CHECK(shown.border_rgb == 0x123456u); /* the other preview values stay */
+	CHECK(shown.label_opacity == 80);
+
+	/* saved on, preview off: the menu ticks -> on everywhere */
+	preview.always_on_top = false;
+	saved.always_on_top = true;
+	shown = follow_saved_toggles(preview, saved);
+	CHECK(shown.always_on_top);
+	CHECK(shown.border_rgb == 0x123456u);
+
+	/* the tile meters toggle follows the same rule, both directions */
+	preview.tile_meters = true;
+	saved.tile_meters = false;
+	CHECK_FALSE(follow_saved_toggles(preview, saved).tile_meters);
+	preview.tile_meters = false;
+	saved.tile_meters = true;
+	CHECK(follow_saved_toggles(preview, saved).tile_meters);
+
+	/* the saved colours / opacities never replace the preview's */
+	saved.border_rgb = 0xABCDEF;
+	saved.meter_opacity = 10;
+	CHECK(follow_saved_toggles(preview, saved).border_rgb == 0x123456u);
+	CHECK(follow_saved_toggles(preview, saved).meter_opacity == preview.meter_opacity);
+	/* the result is normalized */
+	preview.label_opacity = 400;
+	CHECK(follow_saved_toggles(preview, saved).label_opacity == 100);
+}
+
+TEST_CASE("appearance_tile_meters")
+{
+	Appearance a;
+	CHECK(a.tile_meters == kDefaultTileMeters);
+	a.tile_meters = !kDefaultTileMeters;
+	CHECK(a != Appearance()); /* part of equality: a toggle is a change to save */
+	CHECK(normalized(a).tile_meters == !kDefaultTileMeters); /* kept as it is */
+	CHECK(normalized(a) == a);
+	a.tile_meters = kDefaultTileMeters;
+	CHECK(a == Appearance());
+}

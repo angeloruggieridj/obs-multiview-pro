@@ -572,6 +572,9 @@ Appearance appearance_from_value(const JValue &obj)
 	 * 1.0.0) keeps the default, off. */
 	if (const JValue *v = obj.find("always_on_top"); v && v->type == JValue::Bool)
 		a.always_on_top = v->b;
+	/* Same rule (a missing key: files of 1.0.x) with the default kDefaultTileMeters. */
+	if (const JValue *v = obj.find("tile_meters"); v && v->type == JValue::Bool)
+		a.tile_meters = v->b;
 	return a;
 }
 
@@ -653,7 +656,8 @@ std::string to_json(const SettingsFile &file)
 	out += "      \"border_color\": \"" + format_color(app.border_rgb) + "\",\n";
 	out += "      \"label_opacity\": " + std::to_string(app.label_opacity) + ",\n";
 	out += "      \"meter_opacity\": " + std::to_string(app.meter_opacity) + ",\n";
-	out += std::string("      \"always_on_top\": ") + (app.always_on_top ? "true" : "false") + "\n";
+	out += std::string("      \"always_on_top\": ") + (app.always_on_top ? "true" : "false") + ",\n";
+	out += std::string("      \"tile_meters\": ") + (app.tile_meters ? "true" : "false") + "\n";
 	out += "    },\n    \"updates\": {\n";
 	const UpdateSettings &up = file.updates;
 	out += std::string("      \"auto_check\": ") + (up.auto_check ? "true" : "false") + ",\n";

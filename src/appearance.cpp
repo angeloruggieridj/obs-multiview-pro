@@ -15,6 +15,15 @@ Appearance normalized(const Appearance &a)
 	out.label_opacity = clamp_percent(a.label_opacity);
 	out.meter_opacity = clamp_percent(a.meter_opacity);
 	out.always_on_top = a.always_on_top;
+	out.tile_meters = a.tile_meters;
+	return out;
+}
+
+Appearance follow_saved_toggles(const Appearance &current, const Appearance &saved)
+{
+	Appearance out = normalized(current);
+	out.always_on_top = saved.always_on_top;
+	out.tile_meters = saved.tile_meters;
 	return out;
 }
 

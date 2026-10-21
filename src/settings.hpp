@@ -6,7 +6,8 @@
 // File model (version 1):
 //   { "version": 1,
 //     "global": { "appearance": { "border_color": "#999999", "label_opacity": 50,
-//                                 "meter_opacity": 100, "always_on_top": false },
+//                                 "meter_opacity": 100, "always_on_top": false,
+//                                 "tile_meters": true },
 //                 "updates": { "auto_check": true, "include_prereleases": false,
 //                              "last_check_unix": 0, "last_seen_version": "",
 //                              "skipped_version": "" } },

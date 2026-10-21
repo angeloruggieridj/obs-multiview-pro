@@ -13,6 +13,8 @@
 //    draw. 100 is the native look.
 //  - always_on_top: the multiview windows stay above other windows. Off by
 //    default. Not a look, but set in the same tab and saved the same way.
+//  - tile_meters: audio meters on the scene tiles too (they have an effect
+//    only where a window's "Audio meters" is on).
 
 #include <cstdint>
 #include <string>
@@ -20,17 +22,20 @@
 constexpr uint32_t kDefaultBorderRgb = 0x999999; /* native outerColor 0xFF999999 */
 constexpr int kDefaultLabelOpacity = 50;
 constexpr int kDefaultMeterOpacity = 100;
+constexpr bool kDefaultTileMeters = true;
 
 struct Appearance {
 	uint32_t border_rgb = kDefaultBorderRgb; /* 0xRRGGBB */
 	int label_opacity = kDefaultLabelOpacity;
 	int meter_opacity = kDefaultMeterOpacity;
 	bool always_on_top = false;
+	bool tile_meters = kDefaultTileMeters;
 
 	bool operator==(const Appearance &o) const
 	{
 		return border_rgb == o.border_rgb && label_opacity == o.label_opacity &&
-		       meter_opacity == o.meter_opacity && always_on_top == o.always_on_top;
+		       meter_opacity == o.meter_opacity && always_on_top == o.always_on_top &&
+		       tile_meters == o.tile_meters;
 	}
 	bool operator!=(const Appearance &o) const { return !(*this == o); }
 };
@@ -40,6 +45,14 @@ int clamp_percent(long long value);
 
 /* Fields clamped / masked to their valid ranges. */
 Appearance normalized(const Appearance &a);
+
+/* What the settings dialog shows, and previews to every window, when the
+ * toggles a window menu can also set (always on top, tile meters) were saved
+ * as in `saved` while the dialog showed `current` (possibly an unsaved
+ * preview): `current` with those toggles taken from `saved`, normalized. The
+ * dialog previews the result whatever it was before, so a menu toggle always
+ * reaches the windows. */
+Appearance follow_saved_toggles(const Appearance &current, const Appearance &saved);
 
 /* "#RRGGBB" or "RRGGBB", any case, nothing else (no spaces, no short form).
  * On failure `rgb` is left untouched. */
