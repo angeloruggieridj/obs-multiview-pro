@@ -4,9 +4,11 @@
 #include "appearance.hpp"
 
 #include <QDialog>
+#include <QPointer>
 #include <QTimer>
 
 class QCheckBox;
+class QColorDialog;
 class QKeyEvent;
 class QLabel;
 class QLineEdit;
@@ -74,6 +76,9 @@ private:
 	 * opacity, so a slider drag must not trigger one per step. */
 	QTimer m_preview_timer;
 
+	/* The open colour chooser (a child of this dialog, non-modal-loop: deleted
+	 * with the dialog, never on the stack). */
+	QPointer<QColorDialog> m_color_dialog;
 	QPushButton *m_swatch = nullptr;
 	QLineEdit *m_hex = nullptr;
 	QSlider *m_label_slider = nullptr;

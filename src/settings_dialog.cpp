@@ -444,14 +444,27 @@ void SettingsDialog::values_edited(const Appearance &a, bool rewrite_hex)
 
 void SettingsDialog::pick_color()
 {
-	/* getColor runs a nested event loop: the dialog may be deleted meanwhile. */
-	QPointer<SettingsDialog> self(this);
-	const QColor c = QColorDialog::getColor(to_qcolor(m_current.border_rgb), this, tr("Border colour"));
-	if (!self || !c.isValid())
+	/* No nested event loop (QColorDialog::getColor would keep a stack dialog
+	 * alive across the loop, and OBS may delete this dialog meanwhile): the
+	 * chooser lives on the heap as a child of this dialog, so it dies with it. */
+	if (m_color_dialog) {
+		m_color_dialog->raise();
+		m_color_dialog->activateWindow();
 		return;
-	Appearance a = m_current;
-	a.border_rgb = from_qcolor(c);
-	values_edited(a);
+	}
+	auto *chooser = new QColorDialog(to_qcolor(m_current.border_rgb), this);
+	chooser->setAttribute(Qt::WA_DeleteOnClose);
+	chooser->setWindowTitle(tr("Border colour"));
+	m_color_dialog = chooser;
+	/* Only OK sends colorSelected; Cancel / closing changes nothing. */
+	connect(chooser, &QColorDialog::colorSelected, this, [this](const QColor &c) {
+		if (!c.isValid())
+			return;
+		Appearance a = m_current;
+		a.border_rgb = from_qcolor(c);
+		values_edited(a);
+	});
+	chooser->open();
 }
 
 void SettingsDialog::apply()
