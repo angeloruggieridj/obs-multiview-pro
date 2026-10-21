@@ -59,7 +59,7 @@ class ObsState;
  *    it; shutdown() destroys it inside obs_enter_graphics/obs_leave_graphics
  *    after the draw callback is gone. Snapshots and batches hold only CPU
  *    memory, so dropping them on any thread never calls gs_*.
- *  - Per frame: two draw calls for all labels, no allocation, no upload.
+ *  - Per frame: two draw calls for all labels, no allocation of ours, no upload.
  *
  * Status tiles (ON AIR, REC, Clock, Mixer of the "con stato" presets): each is
  * rasterized with Qt on the UI thread (render_status_tile) at the tile's size

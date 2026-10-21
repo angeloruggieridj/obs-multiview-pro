@@ -1201,7 +1201,7 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
  * dark bands of the empty scale, the bright bands up to the level and the
  * peak-hold tick (OBS_EFFECT_SOLID, the colour set before every draw because
  * libobs resets effect parameters after each loop), and finally the dB text
- * as one textured quad. No allocation, no Qt, no logging. */
+ * as one textured quad. No per-frame allocation of ours, no Qt, no logging. */
 void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float fh, bool labels_ok)
 {
 	if (!m_meters_on.load(std::memory_order_relaxed)) {
