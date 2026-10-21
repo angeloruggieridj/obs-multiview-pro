@@ -108,6 +108,20 @@ std::string curl_error_text(CURLcode code)
 	}
 }
 
+/* UI thread only. */
+bool g_curl_ready = false; /* curl_global_init done (once per process) */
+bool g_skipped_protocols = false;
+bool g_skipped_redir_protocols = false;
+bool g_skipped_quick_exit = false;
+
+void note_skipped_option(bool &logged, const char *name)
+{
+	if (logged)
+		return;
+	logged = true;
+	obs_log(LOG_INFO, "update check: this libcurl does not support %s; skipped", name);
+}
+
 std::string request_url()
 {
 	/* Test aid only (see the header): a local server instead of GitHub. */
@@ -165,8 +179,9 @@ UpdateChecker::~UpdateChecker()
 		curl_multi_cleanup(m_multi);
 		m_multi = nullptr;
 	}
-	if (m_global_init)
-		curl_global_cleanup();
+	/* No curl_global_cleanup(): OBS and other plugins share libcurl's global
+	 * state, which is left to process exit (curl_global_init is reference
+	 * counted and is called once per process here). */
 }
 
 size_t UpdateChecker::write_cb(char *data, size_t size, size_t count, void *self)
@@ -188,12 +203,12 @@ bool UpdateChecker::start(Callback done)
 	m_done = std::move(done);
 	m_redirects = 0;
 
-	if (!m_global_init) {
+	if (!g_curl_ready) {
 		if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
 			fail_soon("The update check could not start.");
 			return true;
 		}
-		m_global_init = true;
+		g_curl_ready = true;
 		obs_log(LOG_INFO, "update check transport: %s", transport_description().c_str());
 	}
 
@@ -243,10 +258,18 @@ bool UpdateChecker::begin_request(const std::string &url, std::string &error)
 	const std::string agent = std::string("obs-multiview-pro/") + PLUGIN_VERSION;
 
 	curl_easy_setopt(e, CURLOPT_URL, url.c_str());
-	/* Only the scheme checked above; failure on an old libcurl is harmless
-	 * because the scheme was checked here and redirects are not followed
-	 * by libcurl. */
-	curl_easy_setopt(e, CURLOPT_PROTOCOLS_STR, http ? "http,https" : "https");
+	/* Defence in depth on top of our own checks (scheme above, redirects in
+	 * on_done), which hold whatever the libcurl version: options an old
+	 * libcurl does not know are skipped and logged once. */
+#if LIBCURL_VERSION_NUM >= 0x075500 /* 7.85.0 */
+	if (curl_easy_setopt(e, CURLOPT_PROTOCOLS_STR, http ? "http,https" : "https") != CURLE_OK)
+		note_skipped_option(g_skipped_protocols, "CURLOPT_PROTOCOLS_STR");
+	if (curl_easy_setopt(e, CURLOPT_REDIR_PROTOCOLS_STR, "https") != CURLE_OK)
+		note_skipped_option(g_skipped_redir_protocols, "CURLOPT_REDIR_PROTOCOLS_STR");
+#else
+	note_skipped_option(g_skipped_protocols, "CURLOPT_PROTOCOLS_STR");
+	note_skipped_option(g_skipped_redir_protocols, "CURLOPT_REDIR_PROTOCOLS_STR");
+#endif
 	curl_easy_setopt(e, CURLOPT_FOLLOWLOCATION, 0L); /* followed by hand, see on_done */
 	curl_easy_setopt(e, CURLOPT_HTTPHEADER, h);
 	curl_easy_setopt(e, CURLOPT_USERAGENT, agent.c_str());
@@ -259,14 +282,28 @@ bool UpdateChecker::begin_request(const std::string &url, std::string &error)
 	curl_easy_setopt(e, CURLOPT_MAXFILESIZE_LARGE, static_cast<curl_off_t>(kMaxResponseBytes));
 	curl_easy_setopt(e, CURLOPT_WRITEFUNCTION, &UpdateChecker::write_cb);
 	curl_easy_setopt(e, CURLOPT_WRITEDATA, static_cast<void *>(this));
-	/* Certificates are always verified (these are the defaults, set
-	 * explicitly). Schannel: a revocation server that cannot be reached
-	 * does not fail the check; a revoked certificate still does. */
+	/* Certificates are always verified: chain to a trusted root and host
+	 * name (the defaults, set explicitly).
+	 * Revocation lookups are deliberately off (CURLSSLOPT_NO_REVOKE, curl >=
+	 * 7.44). With Schannel, any revocation checking makes Windows fetch
+	 * OCSP / CRL data synchronously inside the TLS handshake, i.e. inside
+	 * curl_multi_perform on OBS's UI thread, and on a network that drops
+	 * that traffic CryptoAPI waits about 15 s per URL: the OBS window would
+	 * freeze during a show. The answer is only a public release list and the
+	 * page opened in the browser is allow-listed, so a revoked GitHub
+	 * certificate is not worth that risk. Other TLS back ends (OpenSSL on
+	 * Linux, the macOS one) do no revocation lookups by default; the flag is
+	 * harmless there. */
 	curl_easy_setopt(e, CURLOPT_SSL_VERIFYPEER, 1L);
 	curl_easy_setopt(e, CURLOPT_SSL_VERIFYHOST, 2L);
-	curl_easy_setopt(e, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_REVOKE_BEST_EFFORT));
+	curl_easy_setopt(e, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NO_REVOKE));
 	/* Teardown never waits for a name lookup in progress. */
-	curl_easy_setopt(e, CURLOPT_QUICK_EXIT, 1L);
+#if LIBCURL_VERSION_NUM >= 0x075700 /* 7.87.0 */
+	if (curl_easy_setopt(e, CURLOPT_QUICK_EXIT, 1L) != CURLE_OK)
+		note_skipped_option(g_skipped_quick_exit, "CURLOPT_QUICK_EXIT");
+#else
+	note_skipped_option(g_skipped_quick_exit, "CURLOPT_QUICK_EXIT");
+#endif
 	/* No cookies (the cookie engine is off unless enabled), no .netrc, no
 	 * proxy credentials of ours. */
 	curl_easy_setopt(e, CURLOPT_NETRC, static_cast<long>(CURL_NETRC_IGNORED));
