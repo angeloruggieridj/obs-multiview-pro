@@ -111,6 +111,76 @@ TEST_CASE("mixer_select_columns_capped_last_ones_dropped")
 	CHECK(full.dropped == 0);
 }
 
+namespace {
+/* `in` with the columns currently shown. */
+MixerSourceLists with_previous(MixerSourceLists in, Ids previous)
+{
+	in.previous = std::move(previous);
+	return in;
+}
+} // namespace
+
+TEST_CASE("mixer_stable_columns_survive_a_program_preview_swap")
+{
+	/* studio mode: program P (21, 22), preview V (31, 32), device 11 */
+	const MixerSelection first = select_mixer_columns(lists({11}, {21, 22}, {31, 32}, true));
+	CHECK(first.columns == Ids{11, 21, 22, 31, 32, kMixerPgm});
+	/* a cut: program and preview swap, every column stays where it was */
+	const MixerSelection cut = select_mixer_columns(with_previous(lists({11}, {31, 32}, {21, 22}, true), first.columns));
+	CHECK(cut.columns == first.columns);
+	CHECK(cut.dropped == 0);
+	/* and back */
+	CHECK(select_mixer_columns(with_previous(lists({11}, {21, 22}, {31, 32}, true), cut.columns)).columns ==
+	      first.columns);
+}
+
+TEST_CASE("mixer_stable_columns_new_sources_are_appended")
+{
+	/* 41 is new and comes first in the program scene: it goes after the existing columns */
+	const MixerSelection s = select_mixer_columns(with_previous(lists({11}, {41, 21, 42}, {}, false), {11, 21, kMixerPgm}));
+	CHECK(s.columns == Ids{11, 21, 41, 42, kMixerPgm});
+	/* a new device too: appended, not put first */
+	CHECK(select_mixer_columns(with_previous(lists({12, 11}, {21}, {}, false), {11, 21, kMixerPgm})).columns ==
+	      Ids{11, 21, 12, kMixerPgm});
+}
+
+TEST_CASE("mixer_stable_columns_removal_compacts_keeping_the_order")
+{
+	const Ids before = {11, 21, 22, 31, 32, kMixerPgm};
+	/* 22 left the program scene: the others keep their relative order, no gap */
+	CHECK(select_mixer_columns(with_previous(lists({11}, {21}, {31, 32}, true), before)).columns ==
+	      Ids{11, 21, 31, 32, kMixerPgm});
+	/* studio mode off: the preview-only sources go */
+	CHECK(select_mixer_columns(with_previous(lists({11}, {21, 22}, {31, 32}, false), before)).columns ==
+	      Ids{11, 21, 22, kMixerPgm});
+	/* everything gone: PGM alone */
+	CHECK(select_mixer_columns(with_previous(lists({}, {}, {}, false), before)).columns == Ids{kMixerPgm});
+}
+
+TEST_CASE("mixer_stable_columns_cap_dedup_and_pgm_last")
+{
+	/* full (7 + PGM): a new source is dropped, the existing ones stay */
+	const Ids full = {1, 2, 3, 4, 5, 6, 7, kMixerPgm};
+	const MixerSelection s = select_mixer_columns(with_previous(lists({}, {9, 1, 2, 3, 4, 5, 6, 7}, {}, false), full));
+	CHECK(s.columns == full);
+	CHECK(s.dropped == 1);
+	/* one of them goes: the waiting source takes the free place, at the end */
+	const MixerSelection t = select_mixer_columns(with_previous(lists({}, {9, 1, 2, 4, 5, 6, 7}, {}, false), full));
+	CHECK(t.columns == Ids{1, 2, 4, 5, 6, 7, 9, kMixerPgm});
+	CHECK(t.dropped == 0);
+	/* duplicates in the lists and in `previous`, PGM in the middle of `previous` */
+	const MixerSelection d =
+		select_mixer_columns(with_previous(lists({11, 11}, {21, 11}, {21}, true), {21, kMixerPgm, 21, 11}));
+	CHECK(d.columns == Ids{21, 11, kMixerPgm});
+	/* previous columns that are no longer listed anywhere are not kept */
+	CHECK(select_mixer_columns(with_previous(lists({}, {}, {}, true), {5, 6})).columns == Ids{kMixerPgm});
+	/* a smaller cap than the previous columns: the first ones stay */
+	const MixerSelection c = select_mixer_columns(with_previous(lists({}, {1, 2, 3}, {}, false), {3, 2, 1}), 3);
+	CHECK(c.columns == Ids{3, 2, kMixerPgm});
+	CHECK(c.dropped == 1);
+	CHECK(select_mixer_columns(with_previous(lists({}, {1}, {}, false), {1}), 0).columns.empty());
+}
+
 TEST_CASE("mixer_value_of_a_muted_source_is_the_mute_word")
 {
 	/* whatever the level, the tile writes the mute word and the bar is empty */

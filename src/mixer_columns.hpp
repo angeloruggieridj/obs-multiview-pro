@@ -27,6 +27,7 @@ struct MixerSourceLists {
 	std::vector<MixerSourceId> program; /* audio sources of the program scene, scene order */
 	std::vector<MixerSourceId> preview; /* audio sources of the preview scene, scene order */
 	bool studio_mode = false;           /* the preview list counts only in studio mode */
+	std::vector<MixerSourceId> previous; /* the columns shown now, left to right (empty: none) */
 };
 
 struct MixerSelection {
@@ -38,7 +39,12 @@ struct MixerSelection {
  * first, then the program scene's sources, then (studio mode only) the
  * preview scene's; a source listed more than once keeps its first place.
  * PGM comes last (rightmost). At most `max_columns` in all: PGM is never
- * dropped, the sources last in that order are. max_columns 0 -> no column. */
+ * dropped, the sources last in that order are. max_columns 0 -> no column.
+ *
+ * Stable: the sources of `previous` that are still listed keep their columns,
+ * in their order (a studio-mode cut swaps program and preview without moving
+ * anything); the sources that are gone leave no gap; new sources are appended
+ * after them in the order above, while there is room. */
 MixerSelection select_mixer_columns(const MixerSourceLists &in, size_t max_columns = kMixerMaxColumns);
 
 /* `utf8` shortened to `max_chars` code points: unchanged when it fits, else

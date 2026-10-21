@@ -22,9 +22,19 @@ MixerSelection select_mixer_columns(const MixerSourceLists &in, size_t max_colum
 
 	MixerSelection out;
 	const size_t room = max_columns > 0 ? max_columns - 1 : 0; /* beside PGM */
-	const size_t kept = std::min(order.size(), room);
-	out.columns.assign(order.begin(), order.begin() + std::ptrdiff_t(kept));
-	out.dropped = order.size() - kept;
+	auto listed = [&order](MixerSourceId id) { return std::find(order.begin(), order.end(), id) != order.end(); };
+	auto shown = [&out](MixerSourceId id) {
+		return std::find(out.columns.begin(), out.columns.end(), id) != out.columns.end();
+	};
+	/* The columns shown now that are still listed, in place... */
+	for (MixerSourceId id : in.previous)
+		if (out.columns.size() < room && id != kMixerPgm && listed(id) && !shown(id))
+			out.columns.push_back(id);
+	/* ...then the new ones, in priority order. */
+	for (MixerSourceId id : order)
+		if (out.columns.size() < room && !shown(id))
+			out.columns.push_back(id);
+	out.dropped = order.size() - out.columns.size();
 	if (max_columns > 0)
 		out.columns.push_back(kMixerPgm); /* last: rightmost */
 	return out;
