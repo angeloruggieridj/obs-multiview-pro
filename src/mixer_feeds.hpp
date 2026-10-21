@@ -22,7 +22,9 @@
  * kMixerMaxColumns columns; the sources beyond are not shown (logged once per
  * new highest number of them in a session).
  *
- * The levels are not read here: the renderer meters each column's source
+ * Each source column holds a counted reference of its source (released when
+ * the column goes, and by clear(), which the renderer calls before OBS clears
+ * a scene collection). The levels are not read here: the renderer meters each column's source
  * through its MeterPool (one volmeter per source, shared with the Preview
  * meter and the scene tiles) by the column's id, which is the source address.
  *
@@ -36,6 +38,10 @@ class MixerFeeds {
 public:
 	struct Column {
 		MixerSourceId id = kMixerPgm; /* kMixerPgm, or the source's address */
+		/* Counted reference of the source (null for PGM): keeps its address,
+		 * hence `id`, from being reused by another source while the column
+		 * exists. Released by refresh() when the column goes, and by clear(). */
+		obs_source_t *source = nullptr;
 		std::string name;
 		bool muted = false;
 		DbTextState db_state;
@@ -43,6 +49,11 @@ public:
 	};
 
 	enum Change : unsigned { kNone = 0, kSetChanged = 1, kTextChanged = 2 };
+
+	MixerFeeds() = default;
+	~MixerFeeds();
+	MixerFeeds(const MixerFeeds &) = delete;
+	MixerFeeds &operator=(const MixerFeeds &) = delete;
 
 	/* `devices` (channel order, null for an empty channel), `program` and
 	 * `preview` are borrowed: the caller holds their references for the call.
@@ -58,7 +69,7 @@ public:
 	 * Returns kTextChanged when one did. */
 	unsigned apply_levels(const float *hold_db, size_t count, int64_t now_ms);
 
-	/* Drops the columns. Idempotent. */
+	/* Drops the columns and releases their references. Idempotent. */
 	void clear();
 
 	const std::vector<Column> &columns() const { return m_columns; }

@@ -8,8 +8,17 @@
 #include <initializer_list>
 #include <utility>
 
+MixerFeeds::~MixerFeeds()
+{
+	clear();
+}
+
 void MixerFeeds::clear()
 {
+	for (Column &c : m_columns) {
+		obs_source_release(c.source); /* null-safe */
+		c.source = nullptr;
+	}
 	if (!m_columns.empty())
 		++m_generation;
 	m_columns.clear();
@@ -67,6 +76,7 @@ unsigned MixerFeeds::refresh(int64_t now_ms, const std::vector<obs_source_t *> &
 
 	std::vector<Column> next;
 	next.reserve(wanted.columns.size());
+	std::vector<bool> kept(m_columns.size(), false);
 	for (MixerSourceId id : wanted.columns) {
 		size_t old_idx = m_columns.size();
 		for (size_t k = 0; k < m_columns.size(); ++k)
@@ -77,6 +87,7 @@ unsigned MixerFeeds::refresh(int64_t now_ms, const std::vector<obs_source_t *> &
 
 		if (id == kMixerPgm) {
 			if (old_idx < m_columns.size()) {
+				kept[old_idx] = true;
 				next.push_back(std::move(m_columns[old_idx]));
 			} else {
 				Column c;
@@ -96,9 +107,11 @@ unsigned MixerFeeds::refresh(int64_t now_ms, const std::vector<obs_source_t *> &
 		const bool muted = obs_source_muted(s);
 
 		if (old_idx < m_columns.size()) {
-			/* Same source as before (its id is its address, which the
-			 * renderer's meter keeps unique): refresh the texts. */
+			/* Same source as before (its id is its address, kept unique by
+			 * the column's reference): refresh the texts. */
+			kept[old_idx] = true;
 			Column c = std::move(m_columns[old_idx]);
+			m_columns[old_idx].source = nullptr; /* moved: the reference is in `c` */
 			if (c.name != name) {
 				c.name = name;
 				changed |= kTextChanged;
@@ -113,14 +126,25 @@ unsigned MixerFeeds::refresh(int64_t now_ms, const std::vector<obs_source_t *> &
 			continue;
 		}
 
+		obs_source_t *ref = obs_source_get_ref(s);
+		if (!ref)
+			continue; /* being destroyed: no column */
 		Column c;
 		c.id = id;
+		c.source = ref;
 		c.name = name;
 		c.muted = muted;
 		c.db_state = {true, kMeterFloorDb, now_ms};
 		c.value = mixer_value(muted, kMeterFloorDb);
 		next.push_back(std::move(c));
 	}
+
+	/* Columns that are gone release their source. */
+	for (size_t k = 0; k < m_columns.size(); ++k)
+		if (!kept[k]) {
+			obs_source_release(m_columns[k].source); /* null-safe */
+			m_columns[k].source = nullptr;
+		}
 
 	/* A column appeared, vanished or moved: the graphics thread's per-column
 	 * state follows the columns by id (see the renderer). */
