@@ -4,6 +4,8 @@
 // Pure logic of the audio meters on the scene tiles (no OBS / Qt dependency):
 // which sources get a meter, and where the bars go inside a tile.
 
+#include "appearance.hpp"
+#include "audio_meter_math.hpp"
 #include "layout_model.hpp"
 
 #include <cstddef>
@@ -68,3 +70,32 @@ struct TileMeterGeometry {
  * kTileMeterMinPx x kTileMeterMinWidthPx device pixels or degenerate input
  * (non-positive, NaN or infinite). */
 TileMeterGeometry tile_meter_geometry(const RectF &inner, float px_per_unit);
+
+/* One solid rect to draw, edges in canvas units, colour ARGB. */
+struct MeterQuad {
+	float x0;
+	float y0;
+	float x1;
+	float y1;
+	uint32_t argb;
+};
+
+/* backing + 2 bars x (3 dark bands + 3 bright bands + peak-hold tick) */
+constexpr size_t kTileMeterMaxQuads = 15;
+
+/* Everything one tile meter draws, in drawing order, with the same look as the
+ * other meters: the semi-transparent backing, then per bar (L, R) the dark
+ * bands of the empty scale, the bright bands up to the level and the
+ * peak-hold tick (meter_segments, meter_color, peak_hold_color). Every edge
+ * is rounded to a whole canvas unit (neighbours share it: no seams); empty
+ * rects are left out; alpha is scaled by `opacity_percent` (scale_alpha).
+ * Returns how many of `out` are set: 0 for a geometry that is not shown or
+ * opacity 0. The renderer batches the quads of all tiles into one draw. */
+size_t tile_meter_quads(const TileMeterGeometry &g, const ChannelBallistics (&st)[2], int opacity_percent,
+			MeterQuad (&out)[kTileMeterMaxQuads]);
+
+/* ARGB as a libobs vertex colour (R8G8B8A8 in memory, so 0xAABBGGRR). */
+constexpr uint32_t vertex_color(uint32_t argb)
+{
+	return (argb & 0xFF00FF00u) | ((argb >> 16) & 0xFFu) | ((argb & 0xFFu) << 16);
+}

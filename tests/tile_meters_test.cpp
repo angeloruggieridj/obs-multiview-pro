@@ -182,6 +182,75 @@ TEST_CASE("tile_meters_geometry_skips_tiny_tiles")
 	CHECK_FALSE(tile_meter_geometry({0.f, 0.f, 20.f, 400.f}, 1.f).shown);
 }
 
+/* ---- Quads: everything one tile meter draws, for a single batched draw ---- */
+
+namespace {
+TileMeterGeometry sample_geometry()
+{
+	return tile_meter_geometry({486.f, 546.f, 468.f, 258.f}, 1600.f / 1920.f);
+}
+} // namespace
+
+TEST_CASE("tile_meters_quads_silent")
+{
+	const ChannelBallistics st[2] = {};
+	MeterQuad q[kTileMeterMaxQuads];
+	/* backing + 3 dark bands per bar, nothing bright, no hold tick */
+	REQUIRE(tile_meter_quads(sample_geometry(), st, 100, q) == 7);
+	CHECK(q[0].argb == 0x99000000u);
+	for (size_t i = 1; i < 7; ++i) {
+		CHECK(q[i].argb != meter_color(MeterZone::Nominal, true));
+		CHECK(q[i].x1 > q[i].x0);
+		CHECK(q[i].y1 > q[i].y0);
+	}
+	CHECK(q[1].argb == meter_color(MeterZone::Nominal, false));
+}
+
+TEST_CASE("tile_meters_quads_loud")
+{
+	ChannelBallistics st[2];
+	ballistics_step(st[0], -6.f, 0.016f);
+	ballistics_step(st[1], -30.f, 0.016f);
+	MeterQuad q[kTileMeterMaxQuads];
+	const TileMeterGeometry g = sample_geometry();
+	/* backing; L: 3 dark + 3 bright + tick; R: 3 dark + 1 bright + tick */
+	REQUIRE(tile_meter_quads(g, st, 100, q) == 13);
+	/* L: bright green / yellow / red after the dark ones, then the red tick */
+	CHECK(q[4].argb == meter_color(MeterZone::Nominal, true));
+	CHECK(q[5].argb == meter_color(MeterZone::Warning, true));
+	CHECK(q[6].argb == meter_color(MeterZone::Error, true));
+	CHECK(q[7].argb == peak_hold_color(-6.f));
+	/* the bright red run of L ends at -6 dB (edges on whole units) */
+	const float y_top = g.bar[0].y + g.bar[0].h * (1.f - db_to_fraction(-6.f));
+	CHECK(std::fabs(q[6].y0 - y_top) <= 0.5f);
+	CHECK(q[6].y0 == std::round(q[6].y0));
+	/* R sits right of L */
+	CHECK(q[11].x0 > q[4].x0);
+	CHECK(q[11].argb == meter_color(MeterZone::Nominal, true));
+	CHECK(q[12].argb == peak_hold_color(-30.f));
+}
+
+TEST_CASE("tile_meters_quads_opacity_and_hidden")
+{
+	ChannelBallistics st[2];
+	ballistics_step(st[0], -6.f, 0.016f);
+	ballistics_step(st[1], -6.f, 0.016f);
+	MeterQuad q[kTileMeterMaxQuads];
+	REQUIRE(tile_meter_quads(sample_geometry(), st, 50, q) == 15);
+	CHECK(q[0].argb == scale_alpha(0x99000000u, 50));
+	CHECK(q[4].argb == scale_alpha(meter_color(MeterZone::Nominal, true), 50));
+	CHECK(tile_meter_quads(sample_geometry(), st, 0, q) == 0);
+	CHECK(tile_meter_quads(TileMeterGeometry(), st, 100, q) == 0);
+}
+
+TEST_CASE("tile_meters_vertex_color")
+{
+	/* libobs vertex colours are R8G8B8A8 in memory: 0xAABBGGRR */
+	CHECK(vertex_color(0xFF112233u) == 0xFF332211u);
+	CHECK(vertex_color(0x80FF0000u) == 0x800000FFu);
+	CHECK(vertex_color(0x00000000u) == 0u);
+}
+
 TEST_CASE("tile_meters_geometry_degenerate_input")
 {
 	const float nan = std::numeric_limits<float>::quiet_NaN();
