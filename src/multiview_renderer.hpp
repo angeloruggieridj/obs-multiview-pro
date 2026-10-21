@@ -359,6 +359,8 @@ private:
 	bool upload_scale(const MeterScaleBatch &batch);
 	void destroy_gfx_scale();
 	void draw_meters(const RenderSnapshot &snap, float fw, float fh, float scale, bool labels_ok);
+	void draw_tile_meters(const RenderSnapshot &snap, const AudioFeeds &feeds, float fw, float fh, float scale);
+	void destroy_tile_vb();
 	void release_showing();
 	void publish(std::shared_ptr<const RenderSnapshot> snapshot);
 
@@ -425,6 +427,12 @@ private:
 	GfxScale m_gfx_scale;
 	MeterDisplay m_meter;
 	std::array<std::array<float, 2>, kMaxMeterSources> m_frame_peaks{}; /* this frame's peaks per meter */
+	/* All tile meter quads of a frame, vertex coloured: one dynamic buffer,
+	 * grown (never shrunk) to the layout's scene tiles, freed at shutdown or
+	 * when the meters go off. */
+	gs_vertbuffer_t *m_tile_vb = nullptr;
+	size_t m_tile_vb_cap = 0; /* vertices */
+	bool m_tile_vb_failed = false;
 	/* Written by the graphics thread each frame (peak-hold of each mixer
 	 * column, larger channel), read by the UI poll; valid when the generation
 	 * equals the one of the columns being read. */

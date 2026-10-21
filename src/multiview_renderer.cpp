@@ -1147,11 +1147,12 @@ void MultiviewRenderer::shutdown()
 	/* The draw callback is gone (class contract), so nothing else touches
 	 * m_gfx or m_safe now. gs_* objects are freed inside the graphics context. */
 	if (m_gfx.atlas || m_gfx.boxes || m_gfx.texts || m_gfx_status.atlas || m_gfx_status.quads || m_gfx_scale.tex ||
-	    m_safe.ready()) {
+	    m_tile_vb || m_safe.ready()) {
 		obs_enter_graphics();
 		destroy_gfx_labels();
 		destroy_gfx_status();
 		destroy_gfx_scale();
+		destroy_tile_vb();
 		m_safe.shutdown();
 		obs_leave_graphics();
 	}
@@ -1374,6 +1375,7 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	if (!m_meters_on.load(std::memory_order_relaxed)) {
 		if (m_gfx_scale.id)
 			destroy_gfx_scale();
+		destroy_tile_vb();
 		m_meter = MeterDisplay();
 		return;
 	}
@@ -1549,24 +1551,6 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 				draw_meter(meter_geometry(inner, false), m_meter.preview);
 			}
 		}
-		/* Scene tiles: two thin bars on the left edge of each tile with a scene. */
-		if (feeds && snap.tile_meters) {
-			for (const Tile &t : snap.tiles) {
-				if (t.kind != TileKind::Scene || t.scene_slot < 0)
-					continue;
-				const size_t slot = size_t(t.scene_slot);
-				if (slot >= feeds->tiles.size() || slot >= kMaxTileMeterSlots || !feeds->tiles[slot].on)
-					continue;
-				const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
-						     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
-				const TileMeterGeometry g = tile_meter_geometry(inner, scale);
-				if (!g.shown)
-					continue;
-				fill(g.column.x, g.column.y, g.column.x + g.column.w, g.column.y + g.column.h, 0x99000000);
-				draw_bar(g.bar[0], m_meter.tiles[slot][0]);
-				draw_bar(g.bar[1], m_meter.tiles[slot][1]);
-			}
-		}
 		/* Mixer tile: its bars (labels_ok: the geometry is for this canvas). */
 		if (mixer && labels_ok) {
 			const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
@@ -1576,6 +1560,11 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 			}
 		}
 	}
+
+	/* Scene tiles: two thin bars on the left edge of each tile with a scene,
+	 * all tiles in one draw. */
+	if (feeds && snap.tile_meters)
+		draw_tile_meters(snap, *feeds, fw, fh, scale);
 
 	/* dB numbers and L / R captions: one textured quad, the same path as the
 	 * label text. */
@@ -1599,4 +1588,89 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 		gs_draw_sprite(m_gfx_scale.tex, 0, tw, th);
 	gs_enable_framebuffer_srgb(previous);
 	gs_matrix_pop();
+}
+
+/* Graphics thread (or with the draw callback gone, in graphics). */
+void MultiviewRenderer::destroy_tile_vb()
+{
+	gs_vertexbuffer_destroy(m_tile_vb); /* null-safe; frees its data too */
+	m_tile_vb = nullptr;
+	m_tile_vb_cap = 0;
+	m_tile_vb_failed = false;
+}
+
+/* Graphics thread, inside render()'s whole-canvas region. Writes the quads of
+ * every tile meter (tile_meter_quads) into one dynamic vertex-coloured buffer
+ * and draws them in one call (OBS_EFFECT_SOLID, technique SolidColored):
+ * a few hundred quads would otherwise be as many sprite draws, each mapping a
+ * buffer. The buffer is created once for the layout's scene tiles (grown when
+ * a layout needs more), so nothing is allocated per frame. */
+void MultiviewRenderer::draw_tile_meters(const RenderSnapshot &snap, const AudioFeeds &feeds, float fw, float fh,
+					 float scale)
+{
+	size_t scene_tiles = 0;
+	for (const Tile &t : snap.tiles)
+		if (t.kind == TileKind::Scene)
+			++scene_tiles;
+	const size_t need = std::min(scene_tiles, kMaxTileMeterSlots) * kTileMeterMaxQuads * 6;
+	if (need == 0)
+		return;
+	if (need > m_tile_vb_cap) {
+		if (m_tile_vb_failed)
+			return; /* not retried every frame */
+		gs_vertexbuffer_destroy(m_tile_vb);
+		m_tile_vb = nullptr;
+		m_tile_vb_cap = 0;
+		gs_vb_data *data = gs_vbdata_create();
+		data->num = need;
+		data->points = static_cast<vec3 *>(bzalloc(sizeof(vec3) * need));
+		data->colors = static_cast<uint32_t *>(bzalloc(sizeof(uint32_t) * need));
+		m_tile_vb = gs_vertexbuffer_create(data, GS_DYNAMIC); /* takes `data` */
+		if (!m_tile_vb) {
+			gs_vbdata_destroy(data);
+			m_tile_vb_failed = true;
+			return;
+		}
+		m_tile_vb_cap = need;
+	}
+
+	gs_vb_data *data = gs_vertexbuffer_get_data(m_tile_vb);
+	if (!data || !data->points || !data->colors)
+		return;
+	size_t v = 0;
+	MeterQuad quads[kTileMeterMaxQuads];
+	for (const Tile &t : snap.tiles) {
+		if (t.kind != TileKind::Scene || t.scene_slot < 0)
+			continue;
+		const size_t slot = size_t(t.scene_slot);
+		if (slot >= feeds.tiles.size() || slot >= kMaxTileMeterSlots || !feeds.tiles[slot].on)
+			continue;
+		const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+				     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+		const size_t n = tile_meter_quads(tile_meter_geometry(inner, scale), m_meter.tiles[slot],
+						  snap.meter_opacity, quads);
+		for (size_t i = 0; i < n && v + 6 <= m_tile_vb_cap; ++i) {
+			const MeterQuad &q = quads[i];
+			const uint32_t col = vertex_color(q.argb);
+			const float xs[6] = {q.x0, q.x1, q.x0, q.x1, q.x1, q.x0};
+			const float ys[6] = {q.y0, q.y0, q.y1, q.y0, q.y1, q.y1};
+			for (int k = 0; k < 6; ++k) {
+				vec3_set(&data->points[v], xs[k], ys[k], 0.0f);
+				data->colors[v] = col;
+				++v;
+			}
+		}
+	}
+	if (v == 0)
+		return;
+
+	gs_effect_t *solid = obs_get_base_effect(OBS_EFFECT_SOLID);
+	gs_eparam_t *color = gs_effect_get_param_by_name(solid, "color");
+	gs_vertexbuffer_flush(m_tile_vb);
+	gs_load_vertexbuffer(m_tile_vb);
+	gs_load_indexbuffer(nullptr);
+	gs_effect_set_color(color, 0xFFFFFFFF); /* the vertex colours as they are */
+	while (gs_effect_loop(solid, "SolidColored"))
+		gs_draw(GS_TRIS, 0, uint32_t(v));
+	gs_load_vertexbuffer(nullptr);
 }
