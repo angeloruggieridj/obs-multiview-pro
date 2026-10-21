@@ -41,6 +41,7 @@
 #include <QTextFragment>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QWindow>
 #include <QShowEvent>
 
 #if defined(_WIN32)
@@ -48,6 +49,7 @@
 #include <Windows.h>
 #endif
 
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
@@ -511,22 +513,48 @@ void SettingsDialog::set_on_top(bool on)
 	m_on_top_timer.start();
 }
 
-/* One style read per window; re-applies only what is wrong. */
+void SettingsDialog::reassert_on_top()
+{
+	if (!m_keep_on_top || !isVisible())
+		return;
+	apply_on_top();
+	m_on_top_checks = 3;
+	m_on_top_timer.start();
+}
+
+/* While on top: re-asserts every time (idempotent; a multiview window whose
+ * own delayed retry put it at the top of the band goes back below). While
+ * off: releases only what is still topmost. */
 void SettingsDialog::check_on_top()
 {
 #if defined(_WIN32)
-	auto wrong = [this](QWidget *w) {
-		if (!w || !w->isVisible())
-			return false;
-		const bool top = (GetWindowLongPtrW(reinterpret_cast<HWND>(w->winId()), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
-		return top != m_keep_on_top;
+	auto is_top = [](QWidget *w) {
+		return (GetWindowLongPtrW(reinterpret_cast<HWND>(w->winId()), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
 	};
-	if (wrong(this) || wrong(m_color_dialog.data()))
+	bool act = false;
+	for (QWidget *w : {static_cast<QWidget *>(this), static_cast<QWidget *>(m_color_dialog.data())})
+		if (w && w->isVisible() && topmost_check_action(m_keep_on_top, is_top(w)) != TopmostAction::None)
+			act = true;
+	if (act)
 		apply_on_top();
-	if (--m_on_top_checks > 0)
+	if (--m_on_top_checks > 0) {
 		m_on_top_timer.start();
+	} else if (m_keep_on_top && isVisible() && !is_top(this) && !m_on_top_warned) {
+		m_on_top_warned = true;
+		obs_log(LOG_WARNING, "settings dialog: Windows did not keep it always on top (it may stay behind a multiview window)");
+	}
 #else
 	m_on_top_checks = 0;
+#endif
+}
+
+void SettingsDialog::changeEvent(QEvent *event)
+{
+	QDialog::changeEvent(event);
+#if defined(_WIN32)
+	/* Qt's own activate / raise paths may move the window out of the band. */
+	if ((event->type() == QEvent::ActivationChange || event->type() == QEvent::WindowStateChange) && m_keep_on_top)
+		apply_on_top();
 #endif
 }
 
@@ -547,6 +575,11 @@ void SettingsDialog::apply_on_top()
 	auto apply = [this](QWidget *w) {
 		if (!w || !w->isVisible())
 			return;
+		/* Qt keeps the hint on the native window without re-creating or
+		 * hiding it here, so its own raise / activate paths keep the band. */
+		if (QWindow *wh = w->windowHandle())
+			if (wh->flags().testFlag(Qt::WindowStaysOnTopHint) != m_keep_on_top)
+				wh->setFlag(Qt::WindowStaysOnTopHint, m_keep_on_top);
 		SetWindowPos(reinterpret_cast<HWND>(w->winId()), m_keep_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0,
 			     0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 	};
@@ -664,6 +697,12 @@ void open_settings_dialog(SettingsPage page)
 	g_dialog->show();
 	g_dialog->raise();
 	g_dialog->activateWindow();
+}
+
+void settings_dialog_reassert_on_top()
+{
+	if (g_dialog)
+		g_dialog->reassert_on_top();
 }
 
 void close_settings_dialog()

@@ -224,6 +224,9 @@ void MultiviewWindow::apply_on_top_win32()
 		return;
 	SetWindowPos(hwnd, m_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
 		     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	/* Now at the top of the band: an open settings dialog comes back above. */
+	if (m_on_top)
+		settings_dialog_reassert_on_top();
 	if (m_on_top_checks > 0) {
 		--m_on_top_checks;
 		QTimer::singleShot(kOnTopCheckMs, this, [this] { apply_on_top_win32(); });

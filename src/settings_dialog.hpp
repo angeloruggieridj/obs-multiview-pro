@@ -9,6 +9,7 @@
 
 class QCheckBox;
 class QColorDialog;
+class QEvent;
 class QKeyEvent;
 class QShowEvent;
 class QLabel;
@@ -56,9 +57,14 @@ public:
 
 	void reject() override;
 
+	/* A multiview window changed its topmost band (a delayed retry): come
+	 * back above it while the windows are on top. */
+	void reassert_on_top();
+
 protected:
 	void keyPressEvent(QKeyEvent *event) override;
 	void showEvent(QShowEvent *event) override;
+	void changeEvent(QEvent *event) override;
 
 private:
 	QWidget *build_appearance_page();
@@ -106,6 +112,7 @@ private:
 	 * menu closes may not stick; look again a little later, a few times. */
 	QTimer m_on_top_timer;
 	int m_on_top_checks = 0;
+	bool m_on_top_warned = false; /* logged once: the band would not stick */
 	QDialogButtonBox *m_buttons = nullptr;
 
 	QTabWidget *m_tabs = nullptr;
@@ -125,3 +132,6 @@ void open_settings_dialog(SettingsPage page = SettingsPage::Keep);
 /* Closes and deletes the dialog if it is open, taking back any preview. Call
  * before the windows and the store go away (OBS exit, plugin unload). */
 void close_settings_dialog();
+/* A multiview window's topmost band changed after a delay: the open dialog,
+ * if any, re-asserts its own above it. UI thread. */
+void settings_dialog_reassert_on_top();
