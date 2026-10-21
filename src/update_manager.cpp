@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "update_manager.hpp"
 
+#include "i18n.hpp"
 #include "settings_store.hpp"
 
 #include <obs-frontend-api.h>
@@ -104,7 +105,9 @@ void UpdateManager::on_result(const FetchResult &result, bool automatic, bool in
 {
 	switch (result.kind) {
 	case FetchResult::Kind::Ok:
-		m_state = evaluate_releases(result.releases, PLUGIN_VERSION, include_prereleases);
+		m_state = evaluate_releases(result.releases, PLUGIN_VERSION, include_prereleases,
+					    {T("Update.Changelog.NoNotes").toStdString(),
+					     T("Update.Changelog.Truncated").toStdString()});
 		break;
 	case FetchResult::Kind::NoReleases:
 		m_state = UpdateState();
@@ -113,7 +116,8 @@ void UpdateManager::on_result(const FetchResult &result, bool automatic, bool in
 	case FetchResult::Kind::Error:
 		m_state = UpdateState();
 		m_state.status = UpdateStatus::Error;
-		m_state.message = result.message;
+		m_state.error = result.error;
+		m_state.http_status = result.http_status;
 		break;
 	}
 
@@ -134,7 +138,8 @@ void UpdateManager::on_result(const FetchResult &result, bool automatic, bool in
 		break;
 	case UpdateStatus::Error:
 		if (automatic)
-			obs_log(LOG_INFO, "automatic update check failed: %s", m_state.message.c_str());
+			obs_log(LOG_INFO, "automatic update check failed: %s (HTTP status %d)",
+				update_error_key(m_state.error), m_state.http_status);
 		break;
 	case UpdateStatus::Idle:
 	case UpdateStatus::Checking:

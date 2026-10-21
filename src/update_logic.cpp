@@ -346,7 +346,7 @@ std::string strip_markdown_images(const std::string &markdown)
 	return strip_images(markdown, 0);
 }
 
-std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t max_bytes)
+std::string combined_changelog(const std::vector<ReleaseInfo> &releases, const ChangelogText &text, size_t max_bytes)
 {
 	std::string md;
 	for (const ReleaseInfo &r : releases) {
@@ -358,14 +358,14 @@ std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t 
 			md += " (" + date + ")";
 		md += "\n\n";
 		const std::string notes = strip_markdown_images(normalize_newlines(r.notes));
-		md += notes.empty() ? std::string("*No notes for this release.*") : notes;
+		md += notes.empty() ? "*" + text.no_notes + "*" : notes;
 		if (md.size() > max_bytes)
 			break; /* no need to build what is cut anyway */
 	}
 	if (md.size() <= max_bytes)
 		return md;
 
-	const std::string marker = "\n\n---\n\n*Change log truncated: see the release page for the full notes.*\n";
+	const std::string marker = "\n\n---\n\n*" + text.truncated + "*\n";
 	if (max_bytes < marker.size())
 		return md.substr(0, utf8_cut(md, max_bytes));
 	return md.substr(0, utf8_cut(md, max_bytes - marker.size())) + marker;
@@ -374,13 +374,13 @@ std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t 
 /* ---- Check result ------------------------------------------------------------ */
 
 UpdateState evaluate_releases(const std::vector<ReleaseInfo> &releases, const std::string &current,
-			      bool include_prereleases)
+			      bool include_prereleases, const ChangelogText &text)
 {
 	UpdateState state;
 	SemVersion cur;
 	if (!parse_version(current, cur)) {
 		state.status = UpdateStatus::Error;
-		state.message = "The installed version number is not valid.";
+		state.error = UpdateError::InvalidInstalledVersion;
 		return state;
 	}
 
@@ -394,7 +394,7 @@ UpdateState evaluate_releases(const std::vector<ReleaseInfo> &releases, const st
 			continue;
 		any = true;
 		if (compare_versions(v, cur) == 0 && state.installed_notes.empty())
-			state.installed_notes = combined_changelog({r});
+			state.installed_notes = combined_changelog({r}, text);
 	}
 	if (!any) {
 		state.status = UpdateStatus::NoReleases;
@@ -412,37 +412,81 @@ UpdateState evaluate_releases(const std::vector<ReleaseInfo> &releases, const st
 	state.latest = newer.front().tag;
 	if (is_allowed_release_url(newer.front().html_url))
 		state.url = newer.front().html_url;
-	state.changelog = combined_changelog(newer);
+	state.changelog = combined_changelog(newer, text);
 	return state;
 }
 
-std::string update_status_text(const UpdateState &state, const std::string &skipped)
+StatusText update_status_text(const UpdateState &state, const std::string &skipped)
 {
 	switch (state.status) {
 	case UpdateStatus::Idle:
-		return "Not checked yet.";
+		return {"Update.Status.NotChecked", std::string()};
 	case UpdateStatus::Checking:
-		return "Checking for updates...";
+		return {"Update.Status.Checking", std::string()};
 	case UpdateStatus::UpToDate:
-		return "You have the latest version.";
+		return {"Update.Status.UpToDate", std::string()};
 	case UpdateStatus::UpdateAvailable:
-		return "Version " + version_for_display(state.latest) + " is available" +
-		       (!skipped.empty() && skipped == state.latest ? " (skipped)." : ".");
+		return {!skipped.empty() && skipped == state.latest ? "Update.Status.AvailableSkipped"
+								    : "Update.Status.Available",
+			version_for_display(state.latest)};
 	case UpdateStatus::NoReleases:
-		return "No release has been published yet.";
-	case UpdateStatus::Error:
-		return state.message.empty() ? std::string("The update check failed.") : state.message;
+		return {"Update.Status.NoReleases", std::string()};
+	case UpdateStatus::Error: {
+		const bool with_status =
+			state.error == UpdateError::ServerUnavailable || state.error == UpdateError::UnexpectedHttp;
+		return {update_error_key(state.error), with_status ? std::to_string(state.http_status) : std::string()};
 	}
-	return std::string();
+	}
+	return {"Update.Error.Failed", std::string()};
 }
 
-std::string http_error_text(int http_status)
+const char *update_error_key(UpdateError error)
+{
+	switch (error) {
+	case UpdateError::None:
+	case UpdateError::Failed:
+		break;
+	case UpdateError::InvalidInstalledVersion:
+		return "Update.Error.InvalidInstalledVersion";
+	case UpdateError::Network:
+		return "Update.Error.Network";
+	case UpdateError::Timeout:
+		return "Update.Error.Timeout";
+	case UpdateError::NotReleaseList:
+		return "Update.Error.NotReleaseList";
+	case UpdateError::NotJson:
+		return "Update.Error.NotJson";
+	case UpdateError::TooLarge:
+		return "Update.Error.TooLarge";
+	case UpdateError::Redirect:
+		return "Update.Error.Redirect";
+	case UpdateError::NoTls:
+		return "Update.Error.NoTls";
+	case UpdateError::TlsFailed:
+		return "Update.Error.TlsFailed";
+	case UpdateError::InvalidAddress:
+		return "Update.Error.InvalidAddress";
+	case UpdateError::CouldNotStart:
+		return "Update.Error.CouldNotStart";
+	case UpdateError::Unavailable:
+		return "Update.Error.Unavailable";
+	case UpdateError::RateLimited:
+		return "Update.Error.RateLimited";
+	case UpdateError::ServerUnavailable:
+		return "Update.Error.ServerUnavailable";
+	case UpdateError::UnexpectedHttp:
+		return "Update.Error.UnexpectedHttp";
+	}
+	return "Update.Error.Failed";
+}
+
+UpdateError http_error(int http_status)
 {
 	if (http_status == 403 || http_status == 429)
-		return "GitHub rate limit reached. Try again later.";
+		return UpdateError::RateLimited;
 	if (http_status >= 500 && http_status <= 599)
-		return "GitHub is not available right now (HTTP " + std::to_string(http_status) + "). Try again later.";
-	return "Unexpected answer from GitHub (HTTP " + std::to_string(http_status) + ").";
+		return UpdateError::ServerUnavailable;
+	return UpdateError::UnexpectedHttp;
 }
 
 /* ---- Scheduling -------------------------------------------------------------- */

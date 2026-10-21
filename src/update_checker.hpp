@@ -15,11 +15,12 @@ struct FetchResult {
 	enum class Kind {
 		Ok,         /* `releases` holds the list (it may be empty) */
 		NoReleases, /* HTTP 404: nothing published (or no such repository) */
-		Error,      /* `message` says what went wrong, in a few words */
+		Error,      /* `error` says what went wrong */
 	};
 	Kind kind = Kind::Error;
 	std::vector<ReleaseInfo> releases;
-	std::string message;
+	UpdateError error = UpdateError::Failed;
+	int http_status = 0; /* of the last answer, 0 without one */
 };
 
 /* One HTTPS GET of
@@ -74,11 +75,11 @@ public:
 private:
 	static size_t write_cb(char *data, size_t size, size_t count, void *self);
 
-	bool begin_request(const std::string &url, std::string &error);
+	bool begin_request(const std::string &url, UpdateError &error);
 	void release_transfer();
 	void pump();
 	void on_done(int curl_code);
-	void fail_soon(const std::string &message);
+	void fail_soon(UpdateError error);
 	void finish(const FetchResult &result);
 
 	void *m_multi = nullptr;  /* CURLM*, created on first use */

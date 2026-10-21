@@ -33,13 +33,6 @@ constexpr int kMaxReleases = 30;
 constexpr int kMaxNotesChars = 64 * 1024;
 constexpr int kMaxFieldChars = 2048;
 
-constexpr const char *kNetworkMessage = "Could not reach GitHub. Check the internet connection.";
-constexpr const char *kTimeoutMessage = "GitHub did not answer in time. Try again later.";
-constexpr const char *kBadDataMessage = "Unexpected answer from GitHub (not a release list).";
-constexpr const char *kTooLargeMessage = "Unexpected answer from GitHub (too large).";
-constexpr const char *kRedirectMessage = "GitHub redirected the request to an unexpected address.";
-constexpr const char *kNoTlsMessage = "Secure connections are not available in this OBS installation.";
-
 std::string text_field(const QJsonObject &o, const char *key, int max_chars)
 {
 	const QJsonValue v = o.value(QLatin1String(key));
@@ -85,11 +78,11 @@ bool parse_releases(const std::string &body, std::vector<ReleaseInfo> &out)
 	return true;
 }
 
-std::string curl_error_text(CURLcode code)
+UpdateError curl_error(CURLcode code)
 {
 	switch (code) {
 	case CURLE_OPERATION_TIMEDOUT:
-		return kTimeoutMessage;
+		return UpdateError::Timeout;
 	case CURLE_SSL_CONNECT_ERROR:
 	case CURLE_PEER_FAILED_VERIFICATION:
 	case CURLE_SSL_CERTPROBLEM:
@@ -97,14 +90,14 @@ std::string curl_error_text(CURLcode code)
 	case CURLE_SSL_CACERT_BADFILE:
 	case CURLE_SSL_ISSUER_ERROR:
 	case CURLE_SSL_CRL_BADFILE:
-		return "Secure connection to GitHub failed.";
+		return UpdateError::TlsFailed;
 	case CURLE_FILESIZE_EXCEEDED:
-		return kTooLargeMessage;
+		return UpdateError::TooLarge;
 	case CURLE_UNSUPPORTED_PROTOCOL:
 	case CURLE_URL_MALFORMAT:
-		return "The update address is not valid.";
+		return UpdateError::InvalidAddress;
 	default:
-		return kNetworkMessage;
+		return UpdateError::Network;
 	}
 }
 
@@ -205,7 +198,7 @@ bool UpdateChecker::start(Callback done)
 
 	if (!g_curl_ready) {
 		if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK) {
-			fail_soon("The update check could not start.");
+			fail_soon(UpdateError::CouldNotStart);
 			return true;
 		}
 		g_curl_ready = true;
@@ -214,40 +207,40 @@ bool UpdateChecker::start(Callback done)
 
 	const std::string url = request_url();
 	m_plain_http_allowed = starts_with(url, "http://"); /* only a validated local override */
-	std::string error;
+	UpdateError error = UpdateError::Failed;
 	if (!begin_request(url, error))
 		fail_soon(error);
 	return true;
 }
 
-bool UpdateChecker::begin_request(const std::string &url, std::string &error)
+bool UpdateChecker::begin_request(const std::string &url, UpdateError &error)
 {
 	const QUrl parsed(QString::fromStdString(url), QUrl::StrictMode);
 	const bool https = parsed.scheme() == QLatin1String("https");
 	const bool http = parsed.scheme() == QLatin1String("http") && m_plain_http_allowed;
 	if (!parsed.isValid() || (!https && !http) || !parsed.userInfo().isEmpty()) {
-		error = "The update address is not valid.";
+		error = UpdateError::InvalidAddress;
 		return false;
 	}
 	if (https && !curl_has_tls()) {
-		error = kNoTlsMessage;
+		error = UpdateError::NoTls;
 		return false;
 	}
 	if (!curl_has_async_dns()) {
 		/* Name resolution would block OBS's UI thread. */
-		error = "The update check is not available in this OBS installation.";
+		error = UpdateError::Unavailable;
 		return false;
 	}
 	if (!m_multi) {
 		m_multi = curl_multi_init();
 		if (!m_multi) {
-			error = "The update check could not start.";
+			error = UpdateError::CouldNotStart;
 			return false;
 		}
 	}
 	CURL *e = curl_easy_init();
 	if (!e) {
-		error = "The update check could not start.";
+		error = UpdateError::CouldNotStart;
 		return false;
 	}
 
@@ -311,7 +304,7 @@ bool UpdateChecker::begin_request(const std::string &url, std::string &error)
 	if (curl_multi_add_handle(m_multi, e) != CURLM_OK) {
 		curl_slist_free_all(h);
 		curl_easy_cleanup(e);
-		error = "The update check could not start.";
+		error = UpdateError::CouldNotStart;
 		return false;
 	}
 	m_easy = e;
@@ -376,14 +369,15 @@ void UpdateChecker::on_done(int curl_code)
 
 	FetchResult r;
 	r.kind = FetchResult::Kind::Error;
+	r.http_status = static_cast<int>(http);
 
 	if (too_large || code == CURLE_FILESIZE_EXCEEDED) {
-		r.message = kTooLargeMessage;
+		r.error = UpdateError::TooLarge;
 		finish(r);
 		return;
 	}
 	if (code != CURLE_OK) {
-		r.message = curl_error_text(code);
+		r.error = curl_error(code);
 		finish(r);
 		return;
 	}
@@ -392,15 +386,15 @@ void UpdateChecker::on_done(int curl_code)
 		const bool ok = !redirect.empty() && target.isValid() && target.userInfo().isEmpty() &&
 				target.port() == -1 &&
 				is_allowed_redirect(target.scheme().toStdString(), target.host().toLower().toStdString());
-		std::string error;
+		UpdateError error = UpdateError::Failed;
 		if (!ok || m_redirects >= kMaxRedirects) {
-			r.message = kRedirectMessage;
+			r.error = UpdateError::Redirect;
 		} else {
 			++m_redirects;
 			m_plain_http_allowed = false; /* a redirect is always https */
 			if (begin_request(redirect, error))
 				return;
-			r.message = error;
+			r.error = error;
 		}
 		finish(r);
 		return;
@@ -411,12 +405,12 @@ void UpdateChecker::on_done(int curl_code)
 		return;
 	}
 	if (http != 200) {
-		r.message = http == 0 ? std::string(kNetworkMessage) : http_error_text(static_cast<int>(http));
+		r.error = http == 0 ? UpdateError::Network : http_error(static_cast<int>(http));
 		finish(r);
 		return;
 	}
 	if (!starts_with(type, "application/json") && !starts_with(type, "application/vnd.github")) {
-		r.message = "Unexpected answer from GitHub (not JSON).";
+		r.error = UpdateError::NotJson;
 		finish(r);
 		return;
 	}
@@ -424,7 +418,7 @@ void UpdateChecker::on_done(int curl_code)
 	const bool parsed = parse_releases(m_body, releases);
 	m_body.clear();
 	if (!parsed) {
-		r.message = kBadDataMessage;
+		r.error = UpdateError::NotReleaseList;
 		finish(r);
 		return;
 	}
@@ -433,16 +427,16 @@ void UpdateChecker::on_done(int curl_code)
 	finish(r);
 }
 
-void UpdateChecker::fail_soon(const std::string &message)
+void UpdateChecker::fail_soon(UpdateError error)
 {
 	m_pending_error = true;
-	QTimer::singleShot(0, this, [this, message] {
+	QTimer::singleShot(0, this, [this, error] {
 		if (!m_pending_error)
 			return; /* cancelled meanwhile */
 		m_pending_error = false;
 		FetchResult r;
 		r.kind = FetchResult::Kind::Error;
-		r.message = message;
+		r.error = error;
 		finish(r);
 	});
 }

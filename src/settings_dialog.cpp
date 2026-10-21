@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "settings_dialog.hpp"
 
+#include "i18n.hpp"
 #include "settings_store.hpp"
 #include "update_logic.hpp"
 #include "update_manager.hpp"
@@ -330,15 +331,15 @@ void SettingsDialog::show_update_state()
 	const std::string skipped = SettingsStore::instance().updates().skipped_version;
 	const std::string &marker = m.marker_version();
 
-	std::string status = update_status_text(st, skipped);
+	const StatusText line = update_status_text(st, skipped);
+	QString status = line.arg.empty() ? T(line.key) : T(line.key, QString::fromStdString(line.arg));
 	bool can_open = false;
 	bool can_skip = false;
 	std::string markdown;
 	switch (st.status) {
 	case UpdateStatus::Idle:
 		if (!marker.empty()) {
-			status = "Version " + version_for_display(marker) +
-				 " is available (found by an earlier check). Check now to see the change log.";
+			status = T("Update.Status.AvailableEarlier", QString::fromStdString(version_for_display(marker)));
 			can_open = true;
 			can_skip = true;
 		}
@@ -357,7 +358,7 @@ void SettingsDialog::show_update_state()
 		break;
 	}
 
-	m_update_status->setText(QString::fromStdString(status));
+	m_update_status->setText(status);
 	m_check_now->setEnabled(!m.busy());
 	m_open_page->setEnabled(can_open);
 	m_skip->setEnabled(can_skip);

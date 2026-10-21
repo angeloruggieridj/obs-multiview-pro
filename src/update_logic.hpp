@@ -10,6 +10,9 @@
 //    installed version, and the change log shown for them.
 //  - When an automatic check is due.
 //  - Which addresses may be opened in the browser.
+//
+// No text for the user is made here: results are states and error codes, and
+// the status line is a locale key (data/locale/en-US.ini) plus its argument.
 
 #include <cstddef>
 #include <cstdint>
@@ -63,11 +66,18 @@ constexpr size_t kMaxChangelogBytes = 64 * 1024;
 std::vector<ReleaseInfo> newer_releases(const std::vector<ReleaseInfo> &releases, const std::string &current,
 					bool include_prereleases);
 
+/* The two sentences the change log may add, in the user's language. */
+struct ChangelogText {
+	std::string no_notes;  /* for a release without notes */
+	std::string truncated; /* after a change log cut at the size limit */
+};
+
 /* Markdown for the given releases in the given order: a "## <tag> (<date>)"
  * heading, then the notes with image syntax removed (no remote resource is
- * ever loaded). At most `max_bytes` (UTF-8 kept whole); a longer text ends
- * with a truncation marker. */
-std::string combined_changelog(const std::vector<ReleaseInfo> &releases, size_t max_bytes = kMaxChangelogBytes);
+ * ever loaded), or `text.no_notes` in italics. At most `max_bytes` (UTF-8 kept
+ * whole); a longer text ends with a rule and `text.truncated` in italics. */
+std::string combined_changelog(const std::vector<ReleaseInfo> &releases, const ChangelogText &text,
+			       size_t max_bytes = kMaxChangelogBytes);
 
 /* Every Markdown image form ("![alt](url)", "![alt][ref]", "![alt][]",
  * "![alt]", nested brackets, images inside link text or alt text) becomes its
@@ -82,7 +92,28 @@ enum class UpdateStatus {
 	UpToDate,        /* no newer release */
 	UpdateAvailable, /* `latest` is newer than the installed version */
 	NoReleases,      /* the project has published no (matching) release */
-	Error,           /* `message` says what went wrong */
+	Error,           /* `error` says what went wrong */
+};
+
+/* Why a check failed. Each has a locale key (update_error_key). */
+enum class UpdateError {
+	None,
+	Failed,                  /* no better reason known */
+	InvalidInstalledVersion, /* PLUGIN_VERSION is not a version */
+	Network,                 /* no connection, refused, DNS, HTTP status 0 */
+	Timeout,
+	NotReleaseList,          /* JSON, but not the API's release array */
+	NotJson,
+	TooLarge,                /* more than the response cap */
+	Redirect,                /* to a host or scheme that is not allowed, or too many */
+	NoTls,                   /* this libcurl cannot do https */
+	TlsFailed,               /* handshake or certificate failed */
+	InvalidAddress,
+	CouldNotStart,
+	Unavailable,             /* this libcurl cannot resolve names asynchronously */
+	RateLimited,             /* HTTP 403 / 429 */
+	ServerUnavailable,       /* HTTP 5xx, see http_status */
+	UnexpectedHttp,          /* any other HTTP status, see http_status */
 };
 
 struct UpdateState {
@@ -91,18 +122,30 @@ struct UpdateState {
 	std::string url;             /* UpdateAvailable: its release page */
 	std::string changelog;       /* UpdateAvailable: Markdown of every newer release */
 	std::string installed_notes; /* UpToDate: Markdown of the installed release, if listed */
-	std::string message;         /* Error: short text for the user */
+	UpdateError error = UpdateError::None; /* Error: why */
+	int http_status = 0;                   /* Error: the HTTP status, when it matters */
 };
 
 /* The state for a successfully fetched release list. */
 UpdateState evaluate_releases(const std::vector<ReleaseInfo> &releases, const std::string &current,
-			      bool include_prereleases);
+			      bool include_prereleases, const ChangelogText &text);
 
-/* One line for the Updates tab. `skipped`: the version the user chose to skip. */
-std::string update_status_text(const UpdateState &state, const std::string &skipped);
+/* A line for the user: a locale key and the text for its %1 (empty when the
+ * text has no placeholder). */
+struct StatusText {
+	const char *key;
+	std::string arg;
+};
 
-/* Short message for an HTTP status that is not 200 (403 / 429: rate limit). */
-std::string http_error_text(int http_status);
+/* The status line of the Updates tab. `skipped`: the version the user chose
+ * to skip. Keys "Update.Status.*" and "Update.Error.*". */
+StatusText update_status_text(const UpdateState &state, const std::string &skipped);
+
+/* Locale key of an error, "Update.Error.Network"; also used in the log. */
+const char *update_error_key(UpdateError error);
+
+/* The error for an HTTP status that is not 200 (403 / 429: rate limit). */
+UpdateError http_error(int http_status);
 
 /* ---- Scheduling -------------------------------------------------------------- */
 

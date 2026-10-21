@@ -3,6 +3,7 @@
 
 #include "update_logic.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -25,6 +26,9 @@ static int cmp(const std::string &a, const std::string &b)
 {
 	return compare_versions(ver(a), ver(b));
 }
+
+/* Stand-ins for the two locale sentences of the change log. */
+static const ChangelogText kText = {"(no notes)", "cut here"};
 
 static ReleaseInfo rel(const std::string &tag, bool pre = false, bool draft = false, const std::string &notes = "")
 {
@@ -168,7 +172,7 @@ TEST_CASE("state_update_changelog_format_and_order")
 {
 	std::vector<ReleaseInfo> list = {rel("v1.2.0", false, false, "- two\r\n- more"), rel("v1.1.0", false, false, "- one")};
 	list[1].published_at = "garbage";
-	const std::string md = combined_changelog(list);
+	const std::string md = combined_changelog(list, kText);
 	const size_t a = md.find("## v1.2.0 (2026-10-21)");
 	const size_t b = md.find("## v1.1.0");
 	REQUIRE(a != std::string::npos);
@@ -178,8 +182,8 @@ TEST_CASE("state_update_changelog_format_and_order")
 	CHECK(md.find("- two\n- more") != std::string::npos);
 	CHECK(md.find('\r') == std::string::npos);
 	CHECK(md.find("- one") != std::string::npos);
-	CHECK(md.find("truncated") == std::string::npos);
-	CHECK(combined_changelog({}).empty());
+	CHECK(md.find("*cut here*") == std::string::npos);
+	CHECK(combined_changelog({}, kText).empty());
 }
 
 TEST_CASE("state_update_changelog_is_capped")
@@ -188,10 +192,10 @@ TEST_CASE("state_update_changelog_is_capped")
 	for (int i = 0; i < 20000; ++i)
 		big += "\xc3\xa0\xc3\xa8 line\n"; /* multi-byte UTF-8 */
 	const std::vector<ReleaseInfo> list = {rel("v2.0.0", false, false, big), rel("v1.9.0", false, false, big)};
-	const std::string md = combined_changelog(list);
+	const std::string md = combined_changelog(list, kText);
 	CHECK(md.size() <= kMaxChangelogBytes);
 	CHECK(md.size() > kMaxChangelogBytes - 200);
-	CHECK(md.find("truncated") != std::string::npos);
+	CHECK(md.find("*cut here*") != std::string::npos);
 	/* Valid UTF-8: no lead byte without its continuation bytes. */
 	size_t i = 0;
 	bool ok = true;
@@ -209,9 +213,9 @@ TEST_CASE("state_update_changelog_is_capped")
 	}
 	CHECK(ok);
 
-	const std::string tiny = combined_changelog(list, 300);
+	const std::string tiny = combined_changelog(list, kText, 300);
 	CHECK(tiny.size() <= 300);
-	CHECK(combined_changelog(list, 5).size() <= 5);
+	CHECK(combined_changelog(list, kText, 5).size() <= 5);
 }
 
 TEST_CASE("state_update_images_are_stripped")
@@ -224,7 +228,7 @@ TEST_CASE("state_update_images_are_stripped")
 	      "[link](https://github.com/a) and !important");
 	CHECK(strip_markdown_images("unterminated ![alt](http://x") == "unterminated alt");
 	CHECK(strip_markdown_images("unterminated <img src=x") == "unterminated ");
-	const std::string md = combined_changelog({rel("v1.0.0", false, false, "see ![x](https://evil.example/p.png)")});
+	const std::string md = combined_changelog({rel("v1.0.0", false, false, "see ![x](https://evil.example/p.png)")}, kText);
 	CHECK(md.find("evil.example") == std::string::npos);
 }
 
@@ -277,70 +281,120 @@ TEST_CASE("state_update_evaluate")
 {
 	const std::vector<ReleaseInfo> list = {rel("v1.1.0"), rel("v1.0.0", false, false, "installed notes"),
 					       rel("v1.2.0-beta.1", true)};
-	UpdateState s = evaluate_releases(list, "1.0.0", false);
+	UpdateState s = evaluate_releases(list, "1.0.0", false, kText);
 	CHECK(s.status == UpdateStatus::UpdateAvailable);
 	CHECK(s.latest == "v1.1.0");
 	CHECK(s.url == "https://github.com/angeloruggieridj/obs-multiview-pro/releases/tag/v1.1.0");
 	CHECK(s.changelog.find("## v1.1.0") != std::string::npos);
 	CHECK(s.changelog.find("v1.0.0") == std::string::npos);
 
-	s = evaluate_releases(list, "1.0.0", true);
+	s = evaluate_releases(list, "1.0.0", true, kText);
 	CHECK(s.status == UpdateStatus::UpdateAvailable);
 	CHECK(s.latest == "v1.2.0-beta.1");
 	CHECK(s.changelog.find("## v1.2.0-beta.1") < s.changelog.find("## v1.1.0"));
 
-	s = evaluate_releases(list, "1.1.0", false);
+	s = evaluate_releases(list, "1.1.0", false, kText);
 	CHECK(s.status == UpdateStatus::UpToDate);
 	CHECK(s.installed_notes.find("Notes of v1.1.0") != std::string::npos);
 
-	s = evaluate_releases(list, "1.0.5", false); /* installed version not listed */
+	s = evaluate_releases(list, "1.0.5", false, kText); /* installed version not listed */
 	CHECK(s.status == UpdateStatus::UpdateAvailable);
-	s = evaluate_releases({rel("v1.0.0")}, "1.0.5", false);
+	s = evaluate_releases({rel("v1.0.0")}, "1.0.5", false, kText);
 	CHECK(s.status == UpdateStatus::UpToDate);
 	CHECK(s.installed_notes.empty());
 
-	CHECK(evaluate_releases({}, "1.0.0", true).status == UpdateStatus::NoReleases);
-	CHECK(evaluate_releases({rel("v2.0.0", false, true)}, "1.0.0", true).status == UpdateStatus::NoReleases);
-	CHECK(evaluate_releases({rel("v2.0.0-rc.1", true)}, "1.0.0", false).status == UpdateStatus::NoReleases);
-	CHECK(evaluate_releases({rel("junk")}, "1.0.0", true).status == UpdateStatus::NoReleases);
+	CHECK(evaluate_releases({}, "1.0.0", true, kText).status == UpdateStatus::NoReleases);
+	CHECK(evaluate_releases({rel("v2.0.0", false, true)}, "1.0.0", true, kText).status == UpdateStatus::NoReleases);
+	CHECK(evaluate_releases({rel("v2.0.0-rc.1", true)}, "1.0.0", false, kText).status == UpdateStatus::NoReleases);
+	CHECK(evaluate_releases({rel("junk")}, "1.0.0", true, kText).status == UpdateStatus::NoReleases);
 
 	/* A release page outside the repository is never offered. */
 	std::vector<ReleaseInfo> evil = {rel("v3.0.0")};
 	evil[0].html_url = "https://evil.example/download";
-	s = evaluate_releases(evil, "1.0.0", false);
+	s = evaluate_releases(evil, "1.0.0", false, kText);
 	CHECK(s.status == UpdateStatus::UpdateAvailable);
 	CHECK(s.url.empty());
 
-	s = evaluate_releases(list, "not a version", false);
+	s = evaluate_releases(list, "not a version", false, kText);
 	CHECK(s.status == UpdateStatus::Error);
-	CHECK_FALSE(s.message.empty());
+	CHECK(s.error == UpdateError::InvalidInstalledVersion);
 }
 
 TEST_CASE("state_update_status_texts")
 {
+	auto key = [](const UpdateState &st, const std::string &skipped) {
+		return std::string(update_status_text(st, skipped).key);
+	};
 	UpdateState s;
-	CHECK(update_status_text(s, "") == "Not checked yet.");
+	CHECK(key(s, "") == "Update.Status.NotChecked");
+	CHECK(update_status_text(s, "").arg.empty());
 	s.status = UpdateStatus::Checking;
-	CHECK(update_status_text(s, "") == "Checking for updates...");
+	CHECK(key(s, "") == "Update.Status.Checking");
 	s.status = UpdateStatus::UpToDate;
-	CHECK(update_status_text(s, "") == "You have the latest version.");
+	CHECK(key(s, "") == "Update.Status.UpToDate");
 	s.status = UpdateStatus::UpdateAvailable;
 	s.latest = "v1.1.0";
-	CHECK(update_status_text(s, "") == "Version 1.1.0 is available.");
-	CHECK(update_status_text(s, "v1.1.0") == "Version 1.1.0 is available (skipped).");
-	CHECK(update_status_text(s, "v1.0.9") == "Version 1.1.0 is available.");
+	CHECK(key(s, "") == "Update.Status.Available");
+	CHECK(update_status_text(s, "").arg == "1.1.0");
+	CHECK(key(s, "v1.1.0") == "Update.Status.AvailableSkipped");
+	CHECK(update_status_text(s, "v1.1.0").arg == "1.1.0");
+	CHECK(key(s, "v1.0.9") == "Update.Status.Available");
 	s.status = UpdateStatus::NoReleases;
-	CHECK(update_status_text(s, "") == "No release has been published yet.");
+	CHECK(key(s, "") == "Update.Status.NoReleases");
 	s.status = UpdateStatus::Error;
-	s.message = "Could not reach GitHub.";
-	CHECK(update_status_text(s, "") == "Could not reach GitHub.");
-	s.message.clear();
-	CHECK(update_status_text(s, "") == "The update check failed.");
+	s.error = UpdateError::Network;
+	CHECK(key(s, "") == "Update.Error.Network");
+	CHECK(update_status_text(s, "").arg.empty());
+	s.error = UpdateError::None;
+	CHECK(key(s, "") == "Update.Error.Failed");
+	s.error = UpdateError::ServerUnavailable;
+	s.http_status = 503;
+	CHECK(key(s, "") == "Update.Error.ServerUnavailable");
+	CHECK(update_status_text(s, "").arg == "503");
+	s.error = UpdateError::UnexpectedHttp;
+	s.http_status = 418;
+	CHECK(update_status_text(s, "").arg == "418");
+	s.error = UpdateError::RateLimited; /* no placeholder: no argument */
+	CHECK(update_status_text(s, "").arg.empty());
 
-	CHECK(http_error_text(403) == "GitHub rate limit reached. Try again later.");
-	CHECK(http_error_text(429) == "GitHub rate limit reached. Try again later.");
-	CHECK(http_error_text(503) == "GitHub is not available right now (HTTP 503). Try again later.");
-	CHECK(http_error_text(418) == "Unexpected answer from GitHub (HTTP 418).");
+	CHECK(http_error(403) == UpdateError::RateLimited);
+	CHECK(http_error(429) == UpdateError::RateLimited);
+	CHECK(http_error(500) == UpdateError::ServerUnavailable);
+	CHECK(http_error(503) == UpdateError::ServerUnavailable);
+	CHECK(http_error(599) == UpdateError::ServerUnavailable);
+	CHECK(http_error(418) == UpdateError::UnexpectedHttp);
+	CHECK(http_error(301) == UpdateError::UnexpectedHttp);
+}
+
+TEST_CASE("state_update_error_keys_are_distinct")
+{
+	const UpdateError all[] = {UpdateError::InvalidInstalledVersion, UpdateError::Network, UpdateError::Timeout,
+				   UpdateError::NotReleaseList,          UpdateError::NotJson, UpdateError::TooLarge,
+				   UpdateError::Redirect,                UpdateError::NoTls,   UpdateError::TlsFailed,
+				   UpdateError::InvalidAddress,          UpdateError::CouldNotStart,
+				   UpdateError::Unavailable,             UpdateError::RateLimited,
+				   UpdateError::ServerUnavailable,       UpdateError::UnexpectedHttp};
+	std::vector<std::string> keys;
+	for (UpdateError e : all) {
+		const std::string k = update_error_key(e);
+		CHECK(k.rfind("Update.Error.", 0) == 0);
+		CHECK(k != "Update.Error.Failed");
+		keys.push_back(k);
+	}
+	std::sort(keys.begin(), keys.end());
+	CHECK(std::adjacent_find(keys.begin(), keys.end()) == keys.end());
+	CHECK(std::string(update_error_key(UpdateError::Failed)) == "Update.Error.Failed");
+	CHECK(std::string(update_error_key(UpdateError::None)) == "Update.Error.Failed");
+}
+
+TEST_CASE("state_update_changelog_uses_the_given_sentences")
+{
+	ReleaseInfo bare = rel("v1.0.0");
+	bare.notes.clear();
+	const std::string md = combined_changelog({bare}, kText);
+	CHECK(md.find("*(no notes)*") != std::string::npos);
+	const std::string it = combined_changelog({bare}, {"Nessuna nota.", "Troncato."});
+	CHECK(it.find("*Nessuna nota.*") != std::string::npos);
 }
 
 /* ---- should_auto_check --------------------------------------------------------- */
