@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "multiview_window.hpp"
+#include "i18n.hpp"
 #include "layout_model.hpp"
 #include "multiview_renderer.hpp"
 #include "obs_state.hpp"
@@ -72,7 +73,7 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 	/* Like OBSProjector: closing this window must never quit OBS (e.g. when
 	 * the main window is hidden in the tray). */
 	setAttribute(Qt::WA_QuitOnClose, false);
-	setWindowTitle(QStringLiteral("Multiview"));
+	setWindowTitle(T("Window.Title"));
 	resize(960, 540);
 
 	m_state = std::make_unique<ObsState>();
@@ -652,7 +653,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 	/* A check found a newer version: say so first, quietly (never a popup). */
 	if (const UpdateManager *updates = UpdateManager::existing(); updates && !updates->marker_version().empty()) {
 		const QString version = QString::fromStdString(version_for_display(updates->marker_version()));
-		QAction *update = menu->addAction(QStringLiteral("Update available: %1...").arg(version));
+		QAction *update = menu->addAction(T("Menu.UpdateAvailable", version));
 		connect(update, &QAction::triggered, this, [] { open_settings_dialog(SettingsPage::Updates); });
 		menu->addSeparator();
 	}
@@ -660,9 +661,9 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 	const int slot = scene_slot_at(event->pos());
 	if (slot >= 0 && m_state) {
 		const std::string current = m_assignment.scene_for_slot(slot);
-		add_scene_choices(menu->addMenu(current.empty() ? tr("Add scene...") : tr("Assign scene")), slot);
+		add_scene_choices(menu->addMenu(current.empty() ? T("Menu.AddScene") : T("Menu.AssignScene")), slot);
 		if (!current.empty()) {
-			QAction *rm = menu->addAction(tr("Remove scene from tile"));
+			QAction *rm = menu->addAction(T("Menu.RemoveScene"));
 			connect(rm, &QAction::triggered, this, [this, slot] {
 				sync_scene_names();
 				m_assignment.remove(slot);
@@ -672,12 +673,12 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 		menu->addSeparator();
 	}
 
-	QAction *layout = menu->addAction(tr("Layout..."));
+	QAction *layout = menu->addAction(T("Menu.Layout"));
 	connect(layout, &QAction::triggered, this, [this, global_pos] { show_layout_picker(global_pos); });
 
 	/* No button bar in this window: the toggle lives in the menu. */
 	if (m_renderer) {
-		QAction *meters = menu->addAction(tr("Audio meters"));
+		QAction *meters = menu->addAction(T("Menu.AudioMeters"));
 		meters->setCheckable(true);
 		meters->setChecked(m_renderer->audio_meters());
 		connect(meters, &QAction::toggled, this, [this](bool on) {
@@ -686,7 +687,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 				save_options();
 			}
 		});
-		QAction *safe = menu->addAction(tr("Safe areas"));
+		QAction *safe = menu->addAction(T("Menu.SafeAreas"));
 		safe->setCheckable(true);
 		safe->setChecked(m_renderer->safe_areas());
 		connect(safe, &QAction::toggled, this, [this](bool on) {
@@ -697,7 +698,7 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 		});
 	}
 	menu->addSeparator();
-	QAction *settings = menu->addAction(tr("Settings..."));
+	QAction *settings = menu->addAction(T("Menu.Settings"));
 	connect(settings, &QAction::triggered, this, [] { open_settings_dialog(); });
 	menu->popup(global_pos);
 	event->accept();
@@ -731,7 +732,7 @@ void MultiviewWindow::add_scene_choices(QMenu *menu, int slot)
 		});
 	}
 	if (!any)
-		menu->addAction(tr("(no scenes)"))->setEnabled(false);
+		menu->addAction(T("Menu.NoScenes"))->setEnabled(false);
 }
 
 void MultiviewWindow::show_scene_menu(int slot, const QPoint &global_pos)

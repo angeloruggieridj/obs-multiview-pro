@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "multiview_renderer.hpp"
+#include "i18n.hpp"
 #include "obs_state.hpp"
 
 #include <obs.h>
 #include <util/platform.h>
-
-#include <QCoreApplication>
 
 #include <algorithm>
 #include <cstring>
@@ -321,11 +320,11 @@ void MultiviewRenderer::build_labels(RenderSnapshot &snap)
 		bool pvw_pgm = true;
 		switch (t.kind) {
 		case TileKind::Preview:
-			/* Native: Str("StudioMode.Preview"); no locale files yet. */
-			text = QCoreApplication::translate("MultiviewRenderer", "Preview");
+			/* Native: Str("StudioMode.Preview") of OBS's own locale. */
+			text = T("Tile.Preview");
 			break;
 		case TileKind::Program:
-			text = QCoreApplication::translate("MultiviewRenderer", "Program");
+			text = T("Tile.Program");
 			break;
 		case TileKind::Scene: {
 			const size_t slot = static_cast<size_t>(t.scene_slot);

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "preset_picker.hpp"
 
+#include "i18n.hpp"
+
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -65,6 +67,10 @@ void PresetPicker::paintEvent(QPaintEvent *)
 {
 	QPainter p(this);
 	const QPalette &pal = palette();
+	const QString on_air = T("Tile.OnAir");
+	const QString rec = T("Tile.Rec");
+	const QString mix = T("Picker.Mixer");
+	const QString clock = QStringLiteral("12:00");
 	p.fillRect(rect(), pal.color(QPalette::Window));
 	p.setPen(pal.color(QPalette::Mid));
 	p.drawRect(rect().adjusted(0, 0, -1, -1));
@@ -88,23 +94,23 @@ void PresetPicker::paintEvent(QPaintEvent *)
 				fill = QColor(0x00, 0x90, 0x00);
 			else if (t.kind == TileKind::Program)
 				fill = QColor(0x90, 0x00, 0x00);
-			const char *caption = nullptr;
+			const QString *caption = nullptr;
 			switch (t.kind) {
 			case TileKind::OnAir:
 				fill = QColor(0x7A, 0x14, 0x14);
-				caption = "ON AIR";
+				caption = &on_air;
 				break;
 			case TileKind::Rec:
 				fill = QColor(0x8A, 0x4A, 0x10);
-				caption = "REC";
+				caption = &rec;
 				break;
 			case TileKind::Clock:
 				fill = QColor(0x1F, 0x3F, 0x7A);
-				caption = "12:00";
+				caption = &clock;
 				break;
 			case TileKind::Mixer:
 				fill = QColor(0x1F, 0x6A, 0x5A);
-				caption = "Mix";
+				caption = &mix;
 				break;
 			default:
 				break;
@@ -118,7 +124,7 @@ void PresetPicker::paintEvent(QPaintEvent *)
 				f.setBold(true);
 				p.setFont(f);
 				p.setPen(Qt::white);
-				p.drawText(tile, Qt::AlignCenter, QString::fromLatin1(caption));
+				p.drawText(tile, Qt::AlignCenter, *caption);
 			}
 		}
 
@@ -130,7 +136,7 @@ void PresetPicker::paintEvent(QPaintEvent *)
 		p.setFont(font());
 		p.setPen(pal.color(QPalette::WindowText));
 		p.drawText(QRect(cell.x(), thumb.bottom() + 1, cell.width(), kLabelH), Qt::AlignCenter,
-			   (i >= kStatusRowFirstIndex ? tr("%1 scenes + status") : tr("%1 scenes")).arg(scene_count));
+			   T(i >= kStatusRowFirstIndex ? "Picker.ScenesStatus" : "Picker.Scenes", QString::number(scene_count)));
 	}
 }
 
