@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "audio_meter.hpp"
 
-#include <obs-audio-controls.h>
-
 #include <algorithm>
 #include <cmath>
-#include <utility>
 
 namespace {
 
@@ -111,20 +108,6 @@ void AudioMeter::publish(float left_db, float right_db)
 	atomic_store_max(m_peak[1], right_db);
 }
 
-/* Source thread (obs_volmeter). Atomics only. */
-void AudioMeter::volmeter_cb(void *param, const float[MAX_AUDIO_CHANNELS], const float peak[MAX_AUDIO_CHANNELS],
-			     const float[MAX_AUDIO_CHANNELS])
-{
-	const Feed *feed = static_cast<const Feed *>(param);
-	if (feed->muted.load(std::memory_order_relaxed)) {
-		feed->owner->publish(kMeterFloorDb, kMeterFloorDb);
-		return;
-	}
-	const float l = sanitize_db(peak[0]);
-	const float r = feed->mono.load(std::memory_order_relaxed) ? l : sanitize_db(peak[1]);
-	feed->owner->publish(l, r);
-}
-
 /* Audio thread, once per 1024-frame packet, under libobs's audio input mutex.
  * The data is float planar in the OBS output's own channel layout (no
  * downmix is requested, so libobs adds no resampler on the audio thread); L
@@ -143,48 +126,6 @@ void AudioMeter::raw_audio_cb(void *param, size_t, struct audio_data *data)
 	self->publish(sanitize_db(l), sanitize_db(r));
 }
 
-void AudioMeter::add_source(obs_source_t *source)
-{
-	if (!source)
-		return;
-	for (const auto &e : m_entries)
-		if (e->source == source) {
-			obs_source_release(source);
-			return;
-		}
-	obs_volmeter_t *vm = obs_volmeter_create(OBS_FADER_LOG);
-	if (!vm) {
-		obs_source_release(source);
-		return;
-	}
-	auto feed = std::make_unique<Feed>();
-	feed->owner = this;
-	feed->volmeter = vm;
-	feed->source = source;
-	obs_volmeter_add_callback(vm, &AudioMeter::volmeter_cb, feed.get());
-	if (!obs_volmeter_attach_source(vm, source)) {
-		obs_volmeter_remove_callback(vm, &AudioMeter::volmeter_cb, feed.get());
-		obs_volmeter_destroy(vm);
-		obs_source_release(source);
-		return;
-	}
-	feed->mono.store(obs_volmeter_get_nr_channels(vm) == 1, std::memory_order_relaxed);
-	feed->muted.store(obs_source_muted(source), std::memory_order_relaxed);
-	m_entries.push_back(std::move(feed));
-}
-
-void AudioMeter::clear_feeds()
-{
-	for (auto &e : m_entries) {
-		/* Returns only when no callback of this volmeter is running, and none
-		 * can start afterwards; destroy then detaches from the source. */
-		obs_volmeter_remove_callback(e->volmeter, &AudioMeter::volmeter_cb, e.get());
-		obs_volmeter_destroy(e->volmeter);
-		obs_source_release(e->source);
-	}
-	m_entries.clear();
-}
-
 void AudioMeter::detach()
 {
 	if (m_program) {
@@ -192,21 +133,6 @@ void AudioMeter::detach()
 		obs_remove_raw_audio_callback(0, &AudioMeter::raw_audio_cb, this);
 		m_program = false;
 	}
-	clear_feeds();
-}
-
-void AudioMeter::attach(obs_source_t *source)
-{
-	detach();
-	if (source)
-		add_source(obs_source_get_ref(source));
-}
-
-void AudioMeter::attach_sources(std::vector<obs_source_t *> sources)
-{
-	detach();
-	for (obs_source_t *s : sources)
-		add_source(s);
 }
 
 void AudioMeter::attach_program_mix()
@@ -227,31 +153,6 @@ void AudioMeter::attach_program_mix()
 	conv.allow_clipping = true;
 	obs_add_raw_audio_callback(0, &conv, &AudioMeter::raw_audio_cb, this);
 	m_program = true;
-}
-
-bool AudioMeter::has_sources(const std::vector<obs_source_t *> &sources) const
-{
-	if (sources.size() != m_entries.size())
-		return false;
-	for (const obs_source_t *s : sources) {
-		bool found = false;
-		for (const auto &e : m_entries)
-			if (e->source == s) {
-				found = true;
-				break;
-			}
-		if (!found)
-			return false;
-	}
-	return true;
-}
-
-void AudioMeter::update_source_state()
-{
-	for (auto &e : m_entries) {
-		e->mono.store(obs_volmeter_get_nr_channels(e->volmeter) == 1, std::memory_order_relaxed);
-		e->muted.store(obs_source_muted(e->source), std::memory_order_relaxed);
-	}
 }
 
 std::array<float, 2> AudioMeter::levels() const

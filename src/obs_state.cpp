@@ -262,6 +262,18 @@ std::string ObsState::preview_scene() const
 	return name_of(obs_frontend_get_current_preview_scene());
 }
 
+obs_source_t *ObsState::program_scene_source() const
+{
+	return m_active ? obs_frontend_get_current_scene() : nullptr;
+}
+
+obs_source_t *ObsState::preview_scene_source() const
+{
+	if (!m_active || !studio_mode())
+		return nullptr;
+	return obs_frontend_get_current_preview_scene();
+}
+
 bool ObsState::scene_exists(const std::string &name) const
 {
 	if (name.empty())

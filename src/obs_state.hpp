@@ -28,6 +28,11 @@ public:
 	bool studio_mode() const;
 	std::string program_scene() const;
 	std::string preview_scene() const;
+	/* The same scenes as sources (a counted reference the caller releases;
+	 * null when there is none, or outside studio mode for the preview). Not
+	 * looked up by name, so a rename in progress cannot lose them. */
+	obs_source_t *program_scene_source() const;
+	obs_source_t *preview_scene_source() const;
 
 	/* In studio mode set_preview targets the preview, otherwise the program;
 	 * set_program always targets the program. Unknown scene names are a no-op. */

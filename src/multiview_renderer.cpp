@@ -5,6 +5,7 @@
 
 #include <obs.h>
 #include <util/platform.h>
+#include <plugin-support.h>
 
 #include <algorithm>
 #include <cstring>
@@ -111,18 +112,18 @@ MultiviewRenderer::MultiviewRenderer(ObsState &state, const Appearance &appearan
 	connect(&m_state, &ObsState::preview_changed, this, [this] { rebuild_snapshot(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { rebuild_snapshot(); });
 
-	/* Audio feeds follow what is in preview (studio mode) and, for the mixer
-	 * tile, in program. Connected after the snapshot handlers above, so those
-	 * run first. */
-	connect(&m_state, &ObsState::scenes_changed, this, [this] { refresh_audio(); });
+	/* Audio feeds follow what is in preview (studio mode), in program (mixer
+	 * tile) and on the scene tiles. Connected after the snapshot handlers
+	 * above, so those run first. A scene list change re-resolves the slots,
+	 * then polls (refresh_scenes). */
 	connect(&m_state, &ObsState::program_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::preview_changed, this, [this] { refresh_audio(); });
 	connect(&m_state, &ObsState::studio_mode_changed, this, [this](bool) { refresh_audio(); });
-	/* Items added to / removed from / shown in the program and preview
-	 * scenes, and the global audio devices and sources of the mixer tile
-	 * (added, removed, renamed, muted), have no cheap event: look again twice
-	 * a second. The timer runs only with the meters on and either studio mode
-	 * or a mixer tile (stopped otherwise). */
+	/* Items added to / removed from / shown in the scenes, and the global
+	 * audio devices and sources of the mixer tile (added, removed, renamed,
+	 * muted), have no cheap event: look again twice a second. The timer runs
+	 * only with the meters on and studio mode, a mixer tile or tile meters
+	 * (stopped otherwise). */
 	m_audio_timer.setInterval(500);
 	m_audio_timer.setTimerType(Qt::PreciseTimer); /* the dB text rule counts 500 ms */
 	connect(&m_audio_timer, &QTimer::timeout, this, [this] { poll_audio(); });
@@ -145,8 +146,7 @@ void MultiviewRenderer::set_preset(Preset preset)
 	m_preset = preset;
 	m_tiles = build_layout(preset);
 	m_fillers = uncovered_areas(m_tiles);
-	refresh_scenes();
-	refresh_audio(); /* the mixer tile may have appeared or gone */
+	refresh_scenes(); /* also refreshes the audio: the mixer tile may have appeared or gone */
 }
 
 void MultiviewRenderer::set_scene_for_slot(SceneForSlot scene_for_slot)
@@ -162,8 +162,11 @@ void MultiviewRenderer::set_appearance(const Appearance &appearance)
 	const Appearance a = normalized(appearance);
 	if (m_shut_down || a == m_appearance)
 		return;
+	const bool tiles_changed = a.tile_meters != m_appearance.tile_meters;
 	m_appearance = a;
 	rebuild_snapshot();
+	if (tiles_changed)
+		refresh_audio(); /* attaches or detaches the scene tiles' sources */
 }
 
 void MultiviewRenderer::refresh_scenes()
@@ -209,6 +212,7 @@ void MultiviewRenderer::refresh_scenes()
 	m_slot_weak = std::move(weak);
 
 	rebuild_snapshot();
+	refresh_audio(); /* the scene tiles' sources follow their scenes */
 }
 
 void MultiviewRenderer::rebuild_snapshot()
@@ -251,6 +255,10 @@ void MultiviewRenderer::rebuild_snapshot()
 	build_labels(*snap);
 	build_status(*snap);
 	build_meter_scale(*snap);
+	if (m_meters_on.load(std::memory_order_relaxed)) {
+		snap->audio = m_feeds;
+		snap->tile_meters = m_appearance.tile_meters;
+	}
 	build_mixer(*snap);
 	publish(std::move(snap));
 }
@@ -649,38 +657,34 @@ void MultiviewRenderer::set_audio_meters(bool on)
 }
 
 /* The program feed is the raw program mix and does not depend on the scene:
- * attached once while the meters are on. The preview feed is one volmeter per
- * audio source of the preview scene, in studio mode only (outside it the
- * Preview tile shows the program, so its meter mirrors the program levels).
- * The mixer tile's feeds (one volmeter per audio source it shows) exist only
- * while a mixer tile is in the layout. Meters off: nothing attached. */
+ * attached once while the meters are on. Every other level comes from the
+ * meter pool (poll_audio): the preview scene's sources (studio mode; outside
+ * it the Preview tile shows the program, so its meter mirrors the program
+ * levels), the mixer tile's columns (while a mixer tile is in the layout) and
+ * the scene tiles' sources (tile meters on). Meters off: nothing attached. */
 void MultiviewRenderer::refresh_audio()
 {
 	if (m_shut_down)
 		return;
 	if (!m_meters_on.load(std::memory_order_relaxed)) {
 		m_audio_timer.stop();
-		m_pvw_audio.detach();
 		m_pgm_audio.detach();
+		m_pool.clear();
 		m_mixer.clear();
+		m_feeds.reset();
+		m_tile_ids.clear();
+		m_tile_keys.clear();
 		return;
 	}
 	if (!m_pgm_audio.attached())
 		m_pgm_audio.attach_program_mix();
 
-	const bool studio = m_state.studio_mode();
-	const bool mixer = has_mixer_tile();
-	if (!studio)
-		m_pvw_audio.detach();
-	if (!mixer)
-		m_mixer.clear();
-	if (!studio && !mixer) {
+	const bool need_poll = m_state.studio_mode() || has_mixer_tile() || tile_meters_wanted();
+	if (!need_poll)
 		m_audio_timer.stop();
-		return;
-	}
-	if (!m_audio_timer.isActive())
+	else if (!m_audio_timer.isActive())
 		m_audio_timer.start();
-	poll_audio();
+	poll_audio(); /* also drops what is no longer wanted */
 }
 
 bool MultiviewRenderer::has_mixer_tile() const
@@ -691,64 +695,207 @@ bool MultiviewRenderer::has_mixer_tile() const
 	return false;
 }
 
-namespace {
-
-/* The audio sources of the scene called `name` (collect_scene_audio_sources:
- * one counted reference each, the caller releases them). Empty for no name, an
- * unknown scene or one being deleted. */
-std::vector<obs_source_t *> scene_audio_sources(const std::string &name)
+/* Tile meters are on and at least one scene tile has a scene. */
+bool MultiviewRenderer::tile_meters_wanted() const
 {
-	std::vector<obs_source_t *> sources;
-	if (name.empty())
-		return sources;
-	if (obs_source_t *scene = obs_get_source_by_name(name.c_str())) {
-		if (!obs_source_removed(scene))
-			sources = collect_scene_audio_sources(scene);
-		obs_source_release(scene);
-	}
-	return sources;
+	if (!m_appearance.tile_meters)
+		return false;
+	for (obs_weak_source_t *w : m_slot_weak)
+		if (w)
+			return true;
+	return false;
 }
+
+namespace {
 
 void release_all(std::vector<obs_source_t *> &sources)
 {
 	for (obs_source_t *s : sources)
-		obs_source_release(s);
+		obs_source_release(s); /* null-safe */
 	sources.clear();
 }
 
+MeterSourceId meter_id(const obs_source_t *s)
+{
+	return reinterpret_cast<MeterSourceId>(s);
+}
+
+/* The ids of `sources`, skipping null ones and those being deleted. */
+std::vector<MeterSourceId> live_meter_ids(const std::vector<obs_source_t *> &sources)
+{
+	std::vector<MeterSourceId> out;
+	out.reserve(sources.size());
+	for (obs_source_t *s : sources)
+		if (s && !obs_source_removed(s))
+			out.push_back(meter_id(s));
+	return out;
+}
+
+/* The audio sources of each scene, enumerated once per poll however many
+ * consumers ask (a scene on two tiles, the program scene also on a tile...).
+ * Holds one counted reference per scene and per source until destroyed. */
+class SceneSources {
+public:
+	SceneSources() = default;
+	SceneSources(const SceneSources &) = delete;
+	SceneSources &operator=(const SceneSources &) = delete;
+	~SceneSources()
+	{
+		for (Entry &e : m_entries) {
+			release_all(e.sources);
+			obs_source_release(e.scene);
+		}
+	}
+	/* `scene`: a counted reference this object takes over (null-safe). */
+	std::vector<obs_source_t *> take(obs_source_t *scene)
+	{
+		if (!scene)
+			return {};
+		for (const Entry &e : m_entries)
+			if (e.scene == scene) {
+				obs_source_release(scene); /* ours already */
+				return e.sources;
+			}
+		Entry e;
+		e.scene = scene;
+		if (!obs_source_removed(scene))
+			e.sources = collect_scene_audio_sources(scene);
+		m_entries.push_back(e);
+		return e.sources;
+	}
+
+private:
+	struct Entry {
+		obs_source_t *scene = nullptr;
+		std::vector<obs_source_t *> sources;
+	};
+	std::vector<Entry> m_entries;
+};
+
 } // namespace
 
-/* One enumeration of the preview scene per poll, shared by the preview meter
- * and the mixer tile. */
+/* One enumeration per scene per poll, then one plan for every consumer (mixer
+ * columns, preview, scene tiles) and one pool sync. Every source is held by a
+ * counted reference (SceneSources, the devices) until the end of the call, so
+ * the ids (source addresses) handed to the pool are alive. The program and
+ * preview scenes are taken from the frontend as sources and the tiles' scenes
+ * from the slots' weak references, never looked up by name: a rename does not
+ * lose them for a poll. Rebuilds the snapshot only when something visible
+ * changed (a set change, a name, a mute, or a mixer dB text that is due). */
 void MultiviewRenderer::poll_audio()
 {
 	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed))
 		return;
 	const bool studio = m_state.studio_mode();
-	std::vector<obs_source_t *> preview; /* counted references, ours */
-	if (studio)
-		preview = scene_audio_sources(m_state.preview_scene());
-	poll_mixer(preview, studio);
-	poll_preview_audio(std::move(preview)); /* takes them */
-}
-
-/* The mixer tile's sources, names, mute states and dB texts. Rebuilds the
- * snapshot only when something visible changed (a set change, a name, a mute,
- * or a dB text that is due: 500 ms apart and 1 dB or more). `preview` is
- * borrowed. */
-void MultiviewRenderer::poll_mixer(const std::vector<obs_source_t *> &preview, bool studio)
-{
-	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !has_mixer_tile())
-		return;
+	const bool mixer = has_mixer_tile();
+	const bool tiles = m_appearance.tile_meters;
 	const int64_t now_ms = int64_t(os_gettime_ns() / 1000000ull);
-	std::vector<obs_source_t *> program = scene_audio_sources(m_state.program_scene());
-	unsigned changed = m_mixer.refresh(now_ms, program, preview, studio);
-	release_all(program);
+	unsigned changed = MixerFeeds::kNone;
 
-	/* The graphics thread publishes the levels per snapshot generation: trust
-	 * them only once it has drawn the columns we have now. */
+	SceneSources scenes;
+	const std::vector<obs_source_t *> preview = studio ? scenes.take(m_state.preview_scene_source())
+							   : std::vector<obs_source_t *>();
+
+	/* Mixer columns: devices (one reference per occupied channel, released
+	 * below), program and preview scenes. */
+	std::vector<obs_source_t *> devices;
+	if (mixer) {
+		devices.resize(size_t(kMixerGlobalChannels), nullptr);
+		for (size_t i = 0; i < devices.size(); ++i)
+			devices[i] = obs_get_output_source(uint32_t(i + 1));
+		const std::vector<obs_source_t *> program = scenes.take(m_state.program_scene_source());
+		changed |= m_mixer.refresh(now_ms, devices, program, preview, studio);
+	} else if (!m_mixer.columns().empty()) {
+		m_mixer.clear();
+		changed |= MixerFeeds::kSetChanged;
+	}
+
+	/* Consumers in priority order: mixer columns, preview, scene tiles by slot. */
+	const size_t slot_count = m_slot_weak.size();
+	std::vector<std::vector<MeterSourceId>> groups(2 + slot_count);
+	for (const MixerFeeds::Column &c : m_mixer.columns())
+		if (c.id != kMixerPgm)
+			groups[0].push_back(c.id);
+	groups[1] = live_meter_ids(preview);
+	std::vector<bool> tile_on(slot_count, false);
+	if (tiles) {
+		for (size_t s = 0; s < slot_count && s < kMaxTileMeterSlots; ++s) {
+			if (!m_slot_weak[s])
+				continue;
+			obs_source_t *scene = obs_weak_source_get_source(m_slot_weak[s]);
+			if (!scene)
+				continue;
+			tile_on[s] = !obs_source_removed(scene);
+			groups[2 + s] = live_meter_ids(scenes.take(scene));
+		}
+	}
+	const MeterPlan plan = plan_meter_sources(groups);
+	if (plan.dropped > m_meter_dropped_logged) {
+		m_meter_dropped_logged = plan.dropped;
+		obs_log(LOG_INFO, "audio meters: %zu source(s) without a meter (at most %zu per multiview window)",
+			plan.dropped, kMaxMeterSources);
+	}
+
+	/* Every id is the address of a source held above. */
+	std::vector<obs_source_t *> wanted;
+	wanted.reserve(plan.sources.size());
+	for (MeterSourceId id : plan.sources)
+		wanted.push_back(reinterpret_cast<obs_source_t *>(id));
+	const std::vector<std::shared_ptr<SourceMeter>> meters = m_pool.sync(wanted);
+	m_pool.update_state();
+	release_all(devices);
+
+	/* The snapshot's view: meters without the ones that failed, indices remapped. */
+	auto feeds = std::make_shared<AudioFeeds>();
+	std::vector<int> remap(meters.size(), -1);
+	for (size_t i = 0; i < meters.size(); ++i)
+		if (meters[i]) {
+			remap[i] = int(feeds->meters.size());
+			feeds->meters.push_back(meters[i]);
+		}
+	auto indices = [&](const std::vector<size_t> &in) {
+		std::vector<size_t> out;
+		for (size_t i : in)
+			if (i < remap.size() && remap[i] >= 0)
+				out.push_back(size_t(remap[i]));
+		return out;
+	};
+	feeds->preview = indices(plan.groups[1]);
+	for (const MixerFeeds::Column &c : m_mixer.columns()) {
+		int meter = c.id == kMixerPgm ? -1 : -2;
+		if (c.id != kMixerPgm) {
+			const size_t i = size_t(std::find(plan.sources.begin(), plan.sources.end(), c.id) - plan.sources.begin());
+			if (i < remap.size() && remap[i] >= 0)
+				meter = remap[i];
+		}
+		feeds->mixer.push_back(meter);
+	}
+	m_tile_ids.resize(slot_count);
+	m_tile_keys.resize(slot_count, 0);
+	feeds->tiles.resize(slot_count);
+	for (size_t s = 0; s < slot_count; ++s) {
+		AudioFeeds::TileFeed &tf = feeds->tiles[s];
+		tf.on = tile_on[s];
+		tf.meters = indices(plan.groups[2 + s]);
+		std::vector<MeterSourceId> ids;
+		for (size_t i : plan.groups[2 + s])
+			ids.push_back(plan.sources[i]);
+		if (ids != m_tile_ids[s] || m_tile_keys[s] == 0) {
+			m_tile_ids[s] = std::move(ids);
+			m_tile_keys[s] = m_next_tile_key++;
+		}
+		tf.key = m_tile_keys[s];
+	}
+	if (!m_feeds || !(*feeds == *m_feeds)) {
+		m_feeds = std::move(feeds);
+		changed |= MixerFeeds::kSetChanged;
+	}
+	/* `scenes` releases the scene and source references when it goes. */
+
+	/* Mixer dB texts. The graphics thread publishes the levels per snapshot
+	 * generation: trust them only once it has drawn the columns we have now. */
 	const size_t n = std::min(m_mixer.columns().size(), kMixerMaxColumns);
-	if (n && m_mixer_hold_generation.load(std::memory_order_acquire) == m_mixer.generation()) {
+	if (mixer && n && m_mixer_hold_generation.load(std::memory_order_acquire) == m_mixer.generation()) {
 		float hold[kMixerMaxColumns];
 		for (size_t i = 0; i < n; ++i)
 			hold[i] = m_mixer_hold[i].load(std::memory_order_relaxed);
@@ -756,25 +903,6 @@ void MultiviewRenderer::poll_mixer(const std::vector<obs_source_t *> &preview, b
 	}
 	if (changed)
 		rebuild_snapshot();
-}
-
-/* `sources`: the audio sources of the preview scene, counted references that
- * this function takes over (studio mode). */
-void MultiviewRenderer::poll_preview_audio(std::vector<obs_source_t *> sources)
-{
-	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !m_state.studio_mode()) {
-		release_all(sources);
-		return;
-	}
-
-	if (m_pvw_audio.has_sources(sources)) {
-		/* Unchanged: drop the extra references. */
-		for (obs_source_t *s : sources)
-			obs_source_release(s);
-		m_pvw_audio.update_source_state();
-		return;
-	}
-	m_pvw_audio.attach_sources(std::move(sources));
 }
 
 /* The dB numbers of the Program meter, rasterized when their size changes. */
@@ -852,8 +980,13 @@ void MultiviewRenderer::build_mixer(RenderSnapshot &snap)
 		auto draw = std::make_shared<MixerDraw>();
 		draw->generation = m_mixer.generation();
 		draw->columns.reserve(geo.size());
-		for (size_t i = 0; i < geo.size(); ++i)
-			draw->columns.push_back({cols[i].feed, geo[i], cols[i].muted});
+		for (size_t i = 0; i < geo.size(); ++i) {
+			/* The meter of each column (poll_audio); none until it has run. */
+			int meter = cols[i].id == kMixerPgm ? -1 : -2;
+			if (cols[i].id != kMixerPgm && m_feeds && i < m_feeds->mixer.size())
+				meter = m_feeds->mixer[i];
+			draw->columns.push_back({cols[i].id, meter, geo[i], cols[i].muted});
+		}
 		snap.mixer = std::move(draw);
 		return;
 	}
@@ -996,8 +1129,9 @@ void MultiviewRenderer::shutdown()
 	/* Every OBS audio callback goes first: after these return none is running
 	 * and none can start, so nothing touches this object from an audio thread. */
 	m_audio_timer.stop();
-	m_pvw_audio.detach();
 	m_pgm_audio.detach();
+	m_pool.clear();
+	m_feeds.reset();
 	m_mixer.clear();
 	m_scale_batch.reset();
 	publish(nullptr);
@@ -1198,7 +1332,7 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
 	}
 
 	/* After the status tiles: the mixer tile's bars go over its (opaque) image. */
-	draw_meters(*snap, fw, fh, labels_ok);
+	draw_meters(*snap, fw, fh, scale, labels_ok);
 
 	/* Labels last (each sits inside its own tile, so the order does not change
 	 * the picture), all in two draws: the label boxes, then the text from
@@ -1235,7 +1369,7 @@ void MultiviewRenderer::render(uint32_t cx, uint32_t cy)
  * peak-hold tick (OBS_EFFECT_SOLID, the colour set before every draw because
  * libobs resets effect parameters after each loop), and finally the dB text
  * as one textured quad. No per-frame allocation of ours, no Qt, no logging. */
-void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float fh, bool labels_ok)
+void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float fh, float scale, bool labels_ok)
 {
 	if (!m_meters_on.load(std::memory_order_relaxed)) {
 		if (m_gfx_scale.id)
@@ -1249,29 +1383,88 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 	const float dt = m_meter.last_ns ? float(double(now - m_meter.last_ns) * 1e-9) : 0.0f;
 	m_meter.last_ns = now;
 
+	/* Every source meter once (take_peaks has one consumer: this thread),
+	 * then each consumer takes the maximum over its sources. */
+	const AudioFeeds *feeds = snap.audio.get();
+	const size_t nm = feeds ? std::min(feeds->meters.size(), kMaxMeterSources) : 0;
+	for (size_t i = 0; i < nm; ++i)
+		m_frame_peaks[i] = feeds->meters[i]->take_peaks();
+	auto loudest = [&](const std::vector<size_t> &idx) {
+		std::array<float, 2> r = {kMeterFloorDb, kMeterFloorDb};
+		for (size_t i : idx)
+			if (i < nm) {
+				r[0] = std::max(r[0], m_frame_peaks[i][0]);
+				r[1] = std::max(r[1], m_frame_peaks[i][1]);
+			}
+		return r;
+	};
+
 	const std::array<float, 2> pgm = m_pgm_audio.take_peaks();
 	/* Outside studio mode the Preview tile shows the program (as its video). */
-	const std::array<float, 2> pvw = snap.studio_mode ? m_pvw_audio.take_peaks() : pgm;
+	const std::array<float, 2> pvw = !snap.studio_mode ? pgm
+				       : feeds   ? loudest(feeds->preview)
+						 : std::array<float, 2>{kMeterFloorDb, kMeterFloorDb};
 	for (int c = 0; c < 2; ++c) {
 		meter_frame_step(m_meter.program[c], pgm[size_t(c)], dt);
 		meter_frame_step(m_meter.preview[c], pvw[size_t(c)], dt);
 	}
 
-	/* Mixer columns: the program column shares the program levels taken above
-	 * (take_peaks has one consumer); a device column reads its own feed. A muted
-	 * column is empty. The peak-hold of each column goes to the UI poll (dB
-	 * text) through atomics. */
+	/* Scene tiles: the loudest source of each tile's scene. A tile whose
+	 * sources changed restarts its ballistics. */
+	if (feeds && snap.tile_meters) {
+		const size_t n = std::min(feeds->tiles.size(), kMaxTileMeterSlots);
+		for (size_t s = 0; s < n; ++s) {
+			const AudioFeeds::TileFeed &tf = feeds->tiles[s];
+			if (!tf.on)
+				continue;
+			if (m_meter.tile_keys[s] != tf.key) {
+				m_meter.tiles[s][0] = m_meter.tiles[s][1] = ChannelBallistics();
+				m_meter.tile_keys[s] = tf.key;
+			}
+			const std::array<float, 2> in = loudest(tf.meters);
+			meter_frame_step(m_meter.tiles[s][0], in[0], dt);
+			meter_frame_step(m_meter.tiles[s][1], in[1], dt);
+		}
+	}
+
+	/* Mixer columns: the program column shares the program levels taken above;
+	 * a source column reads its meter. A muted column is empty. When the
+	 * columns change, each keeps the ballistics of its source (stable columns:
+	 * a studio-mode cut resets nothing). The peak-hold of each column goes to
+	 * the UI poll (dB text) through atomics. */
 	const MixerDraw *mixer = snap.mixer.get();
 	if (mixer) {
+		const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
 		if (mixer->generation != m_meter.mixer_generation) {
-			for (auto &col : m_meter.mixer)
-				col[0] = col[1] = ChannelBallistics();
+			ChannelBallistics old[kMixerMaxColumns][2];
+			MixerSourceId old_ids[kMixerMaxColumns];
+			const size_t old_n = std::min(m_meter.mixer_count, kMixerMaxColumns);
+			for (size_t i = 0; i < old_n; ++i) {
+				old[i][0] = m_meter.mixer[i][0];
+				old[i][1] = m_meter.mixer[i][1];
+				old_ids[i] = m_meter.mixer_ids[i];
+			}
+			for (size_t i = 0; i < n; ++i) {
+				const MixerSourceId id = mixer->columns[i].id;
+				m_meter.mixer[i][0] = m_meter.mixer[i][1] = ChannelBallistics();
+				for (size_t j = 0; j < old_n; ++j)
+					if (old_ids[j] == id) {
+						m_meter.mixer[i][0] = old[j][0];
+						m_meter.mixer[i][1] = old[j][1];
+						break;
+					}
+				m_meter.mixer_ids[i] = id;
+			}
+			m_meter.mixer_count = n;
 			m_meter.mixer_generation = mixer->generation;
 		}
-		const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
 		for (size_t i = 0; i < n; ++i) {
 			const MixerDrawColumn &col = mixer->columns[i];
-			std::array<float, 2> in = col.feed ? col.feed->take_peaks() : pgm;
+			std::array<float, 2> in = {kMeterFloorDb, kMeterFloorDb};
+			if (col.meter == -1)
+				in = pgm;
+			else if (col.meter >= 0 && size_t(col.meter) < nm)
+				in = m_frame_peaks[size_t(col.meter)];
 			if (col.muted) {
 				m_meter.mixer[i][0] = m_meter.mixer[i][1] = ChannelBallistics();
 			} else {
@@ -1354,6 +1547,24 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 				scale_drawn = true;
 			} else {
 				draw_meter(meter_geometry(inner, false), m_meter.preview);
+			}
+		}
+		/* Scene tiles: two thin bars on the left edge of each tile with a scene. */
+		if (feeds && snap.tile_meters) {
+			for (const Tile &t : snap.tiles) {
+				if (t.kind != TileKind::Scene || t.scene_slot < 0)
+					continue;
+				const size_t slot = size_t(t.scene_slot);
+				if (slot >= feeds->tiles.size() || slot >= kMaxTileMeterSlots || !feeds->tiles[slot].on)
+					continue;
+				const RectF inner = {snap_px(t.rect.x * fw) + thickness, snap_px(t.rect.y * fh) + thickness,
+						     snap_px(t.rect.w * fw) - thicknessx2, snap_px(t.rect.h * fh) - thicknessx2};
+				const TileMeterGeometry g = tile_meter_geometry(inner, scale);
+				if (!g.shown)
+					continue;
+				fill(g.column.x, g.column.y, g.column.x + g.column.w, g.column.y + g.column.h, 0x99000000);
+				draw_bar(g.bar[0], m_meter.tiles[slot][0]);
+				draw_bar(g.bar[1], m_meter.tiles[slot][1]);
 			}
 		}
 		/* Mixer tile: its bars (labels_ok: the geometry is for this canvas). */
