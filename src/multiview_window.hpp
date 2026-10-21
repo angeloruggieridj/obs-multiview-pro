@@ -134,6 +134,12 @@ private:
 	QMetaObject::Connection m_screen_connection;
 	QPointer<QWindow> m_hooked_window; /* the QWindow they belong to */
 	bool m_on_top = false;             /* "always on top", as applied */
+#if defined(_WIN32)
+	/* Looks again after a topmost change (see apply_on_top_win32). */
+	static constexpr int kOnTopChecks = 3;
+	static constexpr int kOnTopCheckMs = 300;
+	int m_on_top_checks = 0;
+#endif
 	bool m_destroying = false;
 	bool m_window_handle_warned = false;
 

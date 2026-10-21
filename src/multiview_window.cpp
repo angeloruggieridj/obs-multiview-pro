@@ -189,6 +189,9 @@ void MultiviewWindow::set_always_on_top(bool on)
 	if (m_destroying)
 		return;
 	m_on_top = on;
+#if defined(_WIN32)
+	m_on_top_checks = kOnTopChecks;
+#endif
 	apply_on_top();
 }
 
@@ -203,11 +206,15 @@ void MultiviewWindow::apply_on_top()
 
 #if defined(_WIN32)
 /* Changes only the z-order band of the existing native window: no new
- * window, no hide / show, the display and its hooks stay as they are. */
+ * window, no hide / show, the display and its hooks stay as they are. Cheap
+ * when nothing differs (one style read), so it is also called when the
+ * window's state or activation changes. After a change it looks again a
+ * little later, a few times at most: in testing the change once did not stick
+ * (made from this window's context menu while it was closing). */
 void MultiviewWindow::apply_on_top_win32()
 {
 	QWindow *wh = windowHandle();
-	if (!wh)
+	if (!wh || m_destroying)
 		return;
 	HWND hwnd = reinterpret_cast<HWND>(wh->winId());
 	if (!hwnd)
@@ -217,6 +224,10 @@ void MultiviewWindow::apply_on_top_win32()
 		return;
 	SetWindowPos(hwnd, m_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
 		     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+	if (m_on_top_checks > 0) {
+		--m_on_top_checks;
+		QTimer::singleShot(kOnTopCheckMs, this, [this] { apply_on_top_win32(); });
+	}
 }
 #endif
 
@@ -724,6 +735,11 @@ void MultiviewWindow::changeEvent(QEvent *event)
 		if (!isMinimized())
 			resize_display(); /* the size may have changed meanwhile */
 	}
+#if defined(_WIN32)
+	/* Re-asserts the topmost band if it was lost (no-op when it is right). */
+	if ((event->type() == QEvent::WindowStateChange || event->type() == QEvent::ActivationChange) && !m_destroying)
+		apply_on_top_win32();
+#endif
 }
 
 void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
