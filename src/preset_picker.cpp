@@ -3,6 +3,7 @@
 
 #include "i18n.hpp"
 
+#include <QFontMetrics>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -120,8 +121,12 @@ void PresetPicker::paintEvent(QPaintEvent *)
 			/* Status tiles get a short caption when the cell is big enough. */
 			if (caption && tile.height() >= 14) {
 				QFont f = p.font();
-				f.setPixelSize(std::max(6, std::min(9, tile.height() / 2)));
+				int px = std::max(6, std::min(9, tile.height() / 2));
+				f.setPixelSize(px);
 				f.setBold(true);
+				/* Translated captions may be longer: shrink to the tile width. */
+				while (px > 6 && QFontMetrics(f).horizontalAdvance(*caption) > tile.width() - 2)
+					f.setPixelSize(--px);
 				p.setFont(f);
 				p.setPen(Qt::white);
 				p.drawText(tile, Qt::AlignCenter, *caption);
