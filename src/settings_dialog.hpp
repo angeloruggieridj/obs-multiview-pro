@@ -76,6 +76,7 @@ private:
 	/* Keeps the dialog (and the colour chooser) above topmost windows. */
 	void set_on_top(bool on);
 	void apply_on_top();
+	void check_on_top();
 	void pick_color();
 	void apply();
 	void update_buttons();
@@ -101,6 +102,10 @@ private:
 	QCheckBox *m_on_top = nullptr;
 	QCheckBox *m_tile_meters = nullptr;
 	bool m_keep_on_top = false; /* the windows are on top now (saved or previewed) */
+	/* Windows: a change of the topmost band made while a window's own popup
+	 * menu closes may not stick; look again a little later, a few times. */
+	QTimer m_on_top_timer;
+	int m_on_top_checks = 0;
 	QDialogButtonBox *m_buttons = nullptr;
 
 	QTabWidget *m_tabs = nullptr;

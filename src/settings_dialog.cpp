@@ -151,6 +151,9 @@ SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 		}
 	m_preview_timer.setSingleShot(true);
 	m_preview_timer.setInterval(50);
+	m_on_top_timer.setSingleShot(true);
+	m_on_top_timer.setInterval(300);
+	connect(&m_on_top_timer, &QTimer::timeout, this, [this] { check_on_top(); });
 	connect(&m_preview_timer, &QTimer::timeout, this, [this] { SettingsStore::instance().preview_appearance(m_current); });
 	connect(m_buttons, &QDialogButtonBox::accepted, this, [this] {
 		apply();
@@ -504,6 +507,27 @@ void SettingsDialog::set_on_top(bool on)
 	 * to the top of the band: come back above it once the event is done. */
 	if (on)
 		QTimer::singleShot(0, this, [this] { apply_on_top(); });
+	m_on_top_checks = 3;
+	m_on_top_timer.start();
+}
+
+/* One style read per window; re-applies only what is wrong. */
+void SettingsDialog::check_on_top()
+{
+#if defined(_WIN32)
+	auto wrong = [this](QWidget *w) {
+		if (!w || !w->isVisible())
+			return false;
+		const bool top = (GetWindowLongPtrW(reinterpret_cast<HWND>(w->winId()), GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+		return top != m_keep_on_top;
+	};
+	if (wrong(this) || wrong(m_color_dialog.data()))
+		apply_on_top();
+	if (--m_on_top_checks > 0)
+		m_on_top_timer.start();
+#else
+	m_on_top_checks = 0;
+#endif
 }
 
 void SettingsDialog::showEvent(QShowEvent *event)
