@@ -58,7 +58,9 @@ TileMeterGeometry tile_meter_geometry(const RectF &t, float px)
 	const float h = t.h;
 	const float margin = h * 0.04f;
 	const float bar_w = std::max(kTileMeterMinBarPx / px, h * 0.022f);
-	const float gap = std::max(kTileMeterMinGapPx / px, bar_w * 0.15f);
+	/* At least one canvas unit too: the quads are rounded to whole units, so
+	 * a smaller gap could vanish on a display larger than the canvas. */
+	const float gap = std::max({kTileMeterMinGapPx / px, 1.f, bar_w * 0.15f});
 	const float pad = margin * 0.5f;
 
 	const float col_x = t.x + margin;

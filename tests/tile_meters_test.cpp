@@ -243,6 +243,29 @@ TEST_CASE("tile_meters_quads_opacity_and_hidden")
 	CHECK(tile_meter_quads(TileMeterGeometry(), st, 100, q) == 0);
 }
 
+TEST_CASE("tile_meters_quads_gap_survives_rounding_on_a_large_display")
+{
+	/* display larger than the canvas (2 device px per canvas unit): the
+	 * L and R bars must stay at least one canvas unit apart after rounding,
+	 * wherever the tile sits */
+	ChannelBallistics st[2];
+	ballistics_step(st[0], -30.f, 0.016f);
+	ballistics_step(st[1], -30.f, 0.016f);
+	MeterQuad q[kTileMeterMaxQuads];
+	for (int k = 0; k <= 20; ++k) {
+		const float x = float(k) * 0.05f;
+		INFO("tile x: " << x);
+		const TileMeterGeometry g = tile_meter_geometry({x, 0.f, 228.f, 128.f}, 2.f);
+		REQUIRE(g.shown);
+		/* backing; L: 3 dark + 1 bright + tick; R: 3 dark + 1 bright + tick */
+		REQUIRE(tile_meter_quads(g, st, 100, q) == 11);
+		const MeterQuad &l = q[4], &r = q[9];
+		CHECK(l.argb == meter_color(MeterZone::Nominal, true));
+		CHECK(r.argb == meter_color(MeterZone::Nominal, true));
+		CHECK(r.x0 - l.x1 >= 1.f);
+	}
+}
+
 TEST_CASE("tile_meters_vertex_color")
 {
 	/* libobs vertex colours are R8G8B8A8 in memory: 0xAABBGGRR */
