@@ -56,10 +56,38 @@ void ObsState::on_event(enum obs_frontend_event event, void *data)
 	static_cast<ObsState *>(data)->handle_event(event);
 }
 
+namespace {
+
+CollectionEvent collection_event(enum obs_frontend_event event)
+{
+	switch (event) {
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGING:
+		return CollectionEvent::Changing;
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CLEANUP:
+		return CollectionEvent::Cleanup;
+	case OBS_FRONTEND_EVENT_SCENE_COLLECTION_CHANGED:
+	case OBS_FRONTEND_EVENT_FINISHED_LOADING:
+		return CollectionEvent::Loaded;
+	case OBS_FRONTEND_EVENT_EXIT:
+		return CollectionEvent::Exit;
+	default:
+		/* The frontend holds back every other event while it loads or
+		 * clears a collection (OBSStudioAPI::on_event, disableSaving). */
+		return CollectionEvent::Activity;
+	}
+}
+
+} // namespace
+
 void ObsState::handle_event(enum obs_frontend_event event)
 {
 	if (!m_active)
 		return;
+
+	/* First, before anything reacts to the event: drop every reference
+	 * synchronously when OBS is about to clear the scene collection. */
+	if (m_gate.on_event(collection_event(event)))
+		emit release_sources();
 
 	switch (event) {
 	case OBS_FRONTEND_EVENT_EXIT:

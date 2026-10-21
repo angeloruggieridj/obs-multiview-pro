@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include "collection_gate.hpp"
 #include "scene_ref.hpp"
 
 #include <obs-frontend-api.h>
@@ -26,6 +27,11 @@ public:
 	 * visible in the multiview (private setting "show_in_multiview"). */
 	std::vector<SceneRef> scenes() const;
 	bool studio_mode() const;
+	/* Counted references of sources may be taken and kept now: false from
+	 * the start of a scene collection switch (and OBS's clearing of the old
+	 * collection) until the new one is loaded, and after EXIT. See
+	 * CollectionGate. */
+	bool sources_allowed() const { return m_active && m_gate.sources_allowed(); }
 	std::string program_scene() const;
 	std::string preview_scene() const;
 	/* The same scenes as sources (a counted reference the caller releases;
@@ -85,6 +91,13 @@ public:
 	std::string last_recording_path() const;
 
 signals:
+	/* Every counted reference of a source must be released NOW (UI thread,
+	 * synchronous): OBS is about to remove, or is removing, every source of
+	 * the scene collection, and reports any that is still alive afterwards as
+	 * a leak (then closes). Emitted at SCENE_COLLECTION_CHANGING,
+	 * SCENE_COLLECTION_CLEANUP and EXIT, before any other signal of the same
+	 * event. Until sources_allowed() is true again nothing may take any. */
+	void release_sources();
 	void scenes_changed();
 	/* A scene collection switch starts (emitted before the scene list moves). */
 	void scene_collection_changing();
@@ -112,6 +125,7 @@ private:
 	bool scene_exists(const std::string &name) const;
 	void fire_pending_transition();
 
+	CollectionGate m_gate;
 	std::string m_pending_transition; /* scene waiting for its preview to apply */
 	bool m_active = true; /* false after OBS_FRONTEND_EVENT_EXIT */
 	bool m_rename_connected = false;

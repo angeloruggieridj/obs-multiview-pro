@@ -107,6 +107,8 @@ MultiviewRenderer::MultiviewRenderer(ObsState &state, const Appearance &appearan
 	connect(&m_canvas_timer, &QTimer::timeout, this, [this] { check_canvas(); });
 	m_canvas_timer.start();
 
+	/* First of all: OBS is about to clear the scene collection. */
+	connect(&m_state, &ObsState::release_sources, this, [this] { release_sources(); });
 	connect(&m_state, &ObsState::scenes_changed, this, [this] { refresh_scenes(); });
 	connect(&m_state, &ObsState::program_changed, this, [this] { rebuild_snapshot(); });
 	connect(&m_state, &ObsState::preview_changed, this, [this] { rebuild_snapshot(); });
@@ -176,6 +178,17 @@ void MultiviewRenderer::refresh_scenes()
 
 	const int count = scene_slot_count(m_tiles);
 	std::vector<std::string> names(static_cast<size_t>(count));
+
+	if (!m_state.sources_allowed()) {
+		/* A scene collection is being switched: no scene until it is loaded
+		 * (scene_collection_changed refreshes the slots again). */
+		release_showing();
+		m_slot_names = std::move(names);
+		m_slot_weak.assign(m_slot_names.size(), nullptr);
+		rebuild_snapshot();
+		refresh_audio();
+		return;
+	}
 
 	if (m_scene_for_slot) {
 		for (int i = 0; i < count; ++i)
@@ -662,18 +675,50 @@ void MultiviewRenderer::set_audio_meters(bool on)
  * it the Preview tile shows the program, so its meter mirrors the program
  * levels), the mixer tile's columns (while a mixer tile is in the layout) and
  * the scene tiles' sources (tile meters on). Meters off: nothing attached. */
+void MultiviewRenderer::detach_audio()
+{
+	m_audio_timer.stop();
+	m_pgm_audio.detach();
+	m_pool.clear();
+	m_mixer.clear();
+	m_feeds.reset();
+	m_tile_ids.clear();
+	m_tile_keys.clear();
+}
+
+void MultiviewRenderer::release_sources()
+{
+	if (m_shut_down)
+		return;
+	detach_audio();
+	release_showing();
+	m_slot_weak.assign(m_slot_names.size(), nullptr);
+	rebuild_snapshot();
+	/* The graphics thread may be drawing the previous snapshot, holding a
+	 * reference of a scene for that frame: displays are drawn inside the
+	 * graphics context, so entering it waits for the frame to end, and the
+	 * next one draws the empty snapshot. */
+	obs_enter_graphics();
+	obs_leave_graphics();
+}
+
+void MultiviewRenderer::set_drawing(bool drawing)
+{
+	if (m_shut_down || drawing == m_drawing)
+		return;
+	m_drawing = drawing;
+	refresh_audio();
+	rebuild_snapshot();
+}
+
 void MultiviewRenderer::refresh_audio()
 {
 	if (m_shut_down)
 		return;
-	if (!m_meters_on.load(std::memory_order_relaxed)) {
-		m_audio_timer.stop();
-		m_pgm_audio.detach();
-		m_pool.clear();
-		m_mixer.clear();
-		m_feeds.reset();
-		m_tile_ids.clear();
-		m_tile_keys.clear();
+	/* Meters off, nothing drawn (hidden / minimised) or a scene collection
+	 * being switched: nothing attached. */
+	if (!m_meters_on.load(std::memory_order_relaxed) || !m_drawing || !m_state.sources_allowed()) {
+		detach_audio();
 		return;
 	}
 	if (!m_pgm_audio.attached())
@@ -784,7 +829,7 @@ private:
  * changed (a set change, a name, a mute, or a mixer dB text that is due). */
 void MultiviewRenderer::poll_audio()
 {
-	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed))
+	if (m_shut_down || !m_meters_on.load(std::memory_order_relaxed) || !m_drawing || !m_state.sources_allowed())
 		return;
 	const bool studio = m_state.studio_mode();
 	const bool mixer = has_mixer_tile();
@@ -1625,9 +1670,10 @@ void MultiviewRenderer::draw_tile_meters(const RenderSnapshot &snap, const Audio
 		data->num = need;
 		data->points = static_cast<vec3 *>(bzalloc(sizeof(vec3) * need));
 		data->colors = static_cast<uint32_t *>(bzalloc(sizeof(uint32_t) * need));
-		m_tile_vb = gs_vertexbuffer_create(data, GS_DYNAMIC); /* takes `data` */
+		/* libobs owns `data` from here on, also when the creation fails (it is
+		 * freed there): never free it here. */
+		m_tile_vb = gs_vertexbuffer_create(data, GS_DYNAMIC);
 		if (!m_tile_vb) {
-			gs_vbdata_destroy(data);
 			m_tile_vb_failed = true;
 			return;
 		}

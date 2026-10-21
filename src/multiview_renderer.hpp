@@ -158,6 +158,12 @@ public:
 	void set_audio_meters(bool on);
 	bool audio_meters() const { return m_meters_on.load(std::memory_order_relaxed); }
 
+	/* UI thread. Whether the window shows the multiview at all (not hidden,
+	 * not minimised). While it does not, nothing is attached to OBS audio
+	 * (no volmeter, no program-mix callback); everything comes back when it
+	 * is shown again. */
+	void set_drawing(bool drawing);
+
 	/* UI thread. The latest StatusSnapshot (StatusMonitor). Rebuilds the
 	 * status tiles whose text changed; a no-op for layouts without them. */
 	void set_status(const StatusSnapshot &status);
@@ -349,6 +355,13 @@ private:
 	/* UI thread: (re)attaches the audio feeds to what is on air / in preview. */
 	void refresh_audio();
 	bool tile_meters_wanted() const;
+	/* UI thread: drops every counted reference of a source this renderer
+	 * holds (meter pool, mixer columns), and the program-mix callback. */
+	void detach_audio();
+	/* UI thread, ObsState::release_sources: detach_audio, slots dropped, an
+	 * empty snapshot published and the frame being drawn waited for, so no
+	 * reference of any source is left when this returns. */
+	void release_sources();
 	DeviceMap display_map(float fw, float fh) const;
 	void check_canvas();
 	/* Graphics thread only (or with the draw callback gone, in graphics). */
@@ -371,6 +384,7 @@ private:
 	std::vector<RectF> m_fillers;
 	SceneForSlot m_scene_for_slot;
 	bool m_shut_down = false;
+	bool m_drawing = true; /* the window shows the multiview (set_drawing) */
 
 	/* UI thread only: per slot, the scene name and an owned weak ref of the
 	 * scene this renderer called obs_source_inc_showing on. */

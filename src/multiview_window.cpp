@@ -384,9 +384,13 @@ void MultiviewWindow::resize_display()
 
 void MultiviewWindow::update_display_enabled()
 {
+	const bool drawing = isVisible() && !isMinimized();
+	/* Nothing is drawn: no audio work either (back when shown again). */
+	if (m_renderer && !m_destroying)
+		m_renderer->set_drawing(drawing);
 	if (!m_display)
 		return;
-	obs_display_set_enabled(m_display, isVisible() && !isMinimized());
+	obs_display_set_enabled(m_display, drawing);
 }
 
 void MultiviewWindow::update_color_space()
