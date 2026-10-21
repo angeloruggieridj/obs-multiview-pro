@@ -6,9 +6,9 @@
 
 | Job | Runner | Preset | Cartella di build | Artifact |
 | --- | --- | --- | --- | --- |
-| `windows` | windows-2022 | `windows-ci-x64` | `build_x64` | `obs-multiview-pro-windows-x64` (dll + pdb) |
-| `macos` | macos-15 (Xcode) | `macos-ci` | `build_macos` | `obs-multiview-pro-macos-universal` (zip del bundle `.plugin`) |
-| `ubuntu` | ubuntu-24.04 | `ubuntu-ci-x86_64` | `build_x86_64` | `obs-multiview-pro-ubuntu-24.04-x86_64` (`.so`) |
+| `windows` | windows-2022 | `windows-ci-x64` | `build_x64` | `obs-multiview-pro-windows-x64` (dll + pdb + `obs-multiview-pro/locale/*.ini`) |
+| `macos` | macos-15 (Xcode) | `macos-ci` | `build_macos` | `obs-multiview-pro-macos-universal` (zip del bundle `.plugin`, con `Contents/Resources/locale/*.ini`) |
+| `ubuntu` | ubuntu-24.04 | `ubuntu-ci-x86_64` | `build_x86_64` | `obs-multiview-pro-ubuntu-24.04-x86_64` (`.so` + `obs-multiview-pro/locale/*.ini`) |
 
 Ogni job: checkout, configure col preset CI, build `RelWithDebInfo`, `ctest --output-on-failure -C RelWithDebInfo` (i test non richiedono OBS ne' Qt), upload del plugin. I preset CI attivano `CMAKE_COMPILE_WARNING_AS_ERROR`: qualunque warning del compilatore fa fallire la build.
 
@@ -30,10 +30,12 @@ Parte solo al push di un tag `v*.*.*`; per ora il tag deve essere numerico, `vMA
 
 Asset (layout pensato per estrarre lo zip direttamente nella cartella dei plugin):
 
-- `obs-multiview-pro-<versione>-windows-x64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.dll` + `.pdb` (in `C:\ProgramData\obs-studio\plugins\`).
-- `obs-multiview-pro-<versione>-macos-universal.zip`: il bundle `obs-multiview-pro.plugin` zippato con `ditto` (artifact di `build.yml`, rinominato).
-- `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.so`.
+- `obs-multiview-pro-<versione>-windows-x64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.dll` + `.pdb` e `obs-multiview-pro/data/locale/*.ini` (in `C:\ProgramData\obs-studio\plugins\`).
+- `obs-multiview-pro-<versione>-macos-universal.zip`: il bundle `obs-multiview-pro.plugin` zippato con `ditto` (artifact di `build.yml`, rinominato); i file di lingua sono in `Contents/Resources/locale/` e il job macOS fallisce se manca `en-US.ini`.
+- `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.so` e `obs-multiview-pro/data/locale/*.ini`.
 - `SHA256SUMS.txt`: `sha256sum` dei tre zip.
+
+File di lingua (`data/locale/*.ini`): `target_install_resources` del template li copia nella rundir accanto al plugin (`rundir/<CONFIG>/obs-multiview-pro/locale/` su Windows e Linux) e nel bundle macOS (`Contents/Resources/locale/`). Il job `release` li sposta in `obs-multiview-pro/data/locale/`, la cartella dati che OBS associa a `obs-multiview-pro/bin/64bit/` (`OBSBasic.cpp`, `AddExtraModulePaths`), e fallisce se un artifact Windows o Linux non contiene `en-US.ini`. Senza i file di lingua il plugin funziona ma menu e riquadri mostrano le chiavi (`Menu.Layout`) e il log dice `locale files not found`.
 
 Nessuna action di terze parti: `actions/checkout@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4` e `gh` (preinstallato sui runner, token `github.token`).
 

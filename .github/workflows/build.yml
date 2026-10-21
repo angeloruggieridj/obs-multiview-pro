@@ -48,6 +48,8 @@ jobs:
       - name: Test
         run: ctest --test-dir build_x64 --output-on-failure -C $env:BUILD_CONFIG
 
+      # The rundir holds the plugin and, next to it, obs-multiview-pro/locale/
+      # (data/ copied by the template's target_install_resources).
       - name: Upload plugin
         uses: actions/upload-artifact@v4
         with:
@@ -55,6 +57,7 @@ jobs:
           path: |
             build_x64/rundir/RelWithDebInfo/*.dll
             build_x64/rundir/RelWithDebInfo/*.pdb
+            build_x64/rundir/RelWithDebInfo/obs-multiview-pro/locale/*.ini
           if-no-files-found: error
 
   macos:
@@ -91,6 +94,8 @@ jobs:
         run: |
           mkdir -p dist
           for bundle in build_macos/rundir/RelWithDebInfo/*.plugin; do
+            # The locale files travel inside the bundle (Contents/Resources).
+            test -f "$bundle/Contents/Resources/locale/en-US.ini" || { echo "::error::$bundle has no Contents/Resources/locale/en-US.ini"; exit 1; }
             ditto -c -k --keepParent "$bundle" "dist/$(basename "$bundle").zip"
           done
           ls -l dist
@@ -138,5 +143,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: obs-multiview-pro-ubuntu-24.04-x86_64
-          path: build_x86_64/rundir/RelWithDebInfo/*.so
+          path: |
+            build_x86_64/rundir/RelWithDebInfo/*.so
+            build_x86_64/rundir/RelWithDebInfo/obs-multiview-pro/locale/*.ini
           if-no-files-found: error

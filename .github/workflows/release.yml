@@ -83,12 +83,21 @@ jobs:
         run: find artifacts -type f -exec ls -l {} \;
 
       # Layouts: unzip the Windows and Linux archives into the OBS plugins
-      # folder (obs-multiview-pro/bin/64bit/...); the macOS archive holds the
-      # .plugin bundle, zipped with ditto by build.yml.
+      # folder (obs-multiview-pro/bin/64bit/<binary> and
+      # obs-multiview-pro/data/locale/*.ini, where OBS looks for a plugin's
+      # data); the macOS archive holds the .plugin bundle (locale files in
+      # Contents/Resources/locale), zipped with ditto by build.yml.
       - name: Build release assets
         run: |
           set -euo pipefail
-          mkdir -p dist stage/windows/obs-multiview-pro/bin/64bit stage/ubuntu/obs-multiview-pro/bin/64bit
+          mkdir -p dist stage/windows/obs-multiview-pro/bin/64bit stage/ubuntu/obs-multiview-pro/bin/64bit \
+            stage/windows/obs-multiview-pro/data/locale stage/ubuntu/obs-multiview-pro/data/locale
+
+          # Locale files of an artifact (rundir layout obs-multiview-pro/locale/).
+          copy_locale() {
+            test -f "$1/obs-multiview-pro/locale/en-US.ini" || { echo "::error::$1 has no obs-multiview-pro/locale/en-US.ini"; exit 1; }
+            cp "$1"/obs-multiview-pro/locale/*.ini "$2/obs-multiview-pro/data/locale/"
+          }
 
           win=artifacts/obs-multiview-pro-windows-x64
           test -f "$win/obs-multiview-pro.dll" || { echo "::error::Windows artifact has no obs-multiview-pro.dll"; exit 1; }
@@ -96,15 +105,18 @@ jobs:
           if [ -f "$win/obs-multiview-pro.pdb" ]; then
             cp "$win/obs-multiview-pro.pdb" stage/windows/obs-multiview-pro/bin/64bit/
           fi
+          copy_locale "$win" stage/windows
           (cd stage/windows && zip -r -X "../../dist/obs-multiview-pro-$VERSION-windows-x64.zip" obs-multiview-pro)
 
           mac=artifacts/obs-multiview-pro-macos-universal/obs-multiview-pro.plugin.zip
           test -f "$mac" || { echo "::error::macOS artifact has no obs-multiview-pro.plugin.zip"; exit 1; }
           cp "$mac" "dist/obs-multiview-pro-$VERSION-macos-universal.zip"
 
-          lin=artifacts/obs-multiview-pro-ubuntu-24.04-x86_64/obs-multiview-pro.so
+          lin_dir=artifacts/obs-multiview-pro-ubuntu-24.04-x86_64
+          lin="$lin_dir/obs-multiview-pro.so"
           test -f "$lin" || { echo "::error::Ubuntu artifact has no obs-multiview-pro.so"; exit 1; }
           cp "$lin" stage/ubuntu/obs-multiview-pro/bin/64bit/
+          copy_locale "$lin_dir" stage/ubuntu
           (cd stage/ubuntu && zip -r -X "../../dist/obs-multiview-pro-$VERSION-ubuntu-24.04-x86_64.zip" obs-multiview-pro)
 
           (cd dist && sha256sum *.zip > SHA256SUMS.txt)
