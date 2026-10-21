@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
-// Status tile text and bookkeeping (no OBS / Qt dependency).
+// Status tile values and bookkeeping (no OBS / Qt dependency). Numbers,
+// times and names only: the words around them (captions, OK / HIGH, PAUSED)
+// come from the locale files, see status_tiles.cpp.
 
 #include "layout_model.hpp"
 
@@ -22,9 +24,10 @@ std::string format_dropped(int64_t dropped, int64_t total_frames);
 /* Binary units: "512 B", "1.5 KB", "5.5 MB", "1.50 GB". Negative -> "--". */
 std::string format_filesize(int64_t bytes);
 
-/* libobs congestion 0..1 as the "CACHE" word of the ATEM tile: "OK" below 0.5,
- * "HIGH" from 0.5 up; negative / NaN (unknown) -> "--". */
-std::string format_congestion(double congestion);
+/* libobs congestion 0..1, shown under "CACHE" on the ATEM tile: Ok below 0.5,
+ * High from 0.5 up; negative / NaN -> Unknown (shown as "--"). */
+enum class Congestion { Unknown, Ok, High };
+Congestion congestion_level(double congestion);
 
 /* Friendly stream destination: the OBS service name from the settings trimmed
  * at " - " ("YouTube - RTMPS" -> "YouTube"); if empty, the host of the server
@@ -35,18 +38,18 @@ std::string friendly_service_name(const std::string &service, const std::string 
 /* Last path component (either separator); empty / directory -> "--". */
 std::string file_name_of(const std::string &path);
 
-/* The text shown by the status tiles. Inactive outputs show "--". */
+/* The values shown by the status tiles. Inactive outputs show "--". */
 struct StatusSnapshot {
 	std::string clock; /* local time, "HH:MM:SS" */
 	bool streaming = false;
 	std::string stream_duration; /* "HH:MM:SS" or "--" */
 	std::string bitrate;         /* Mb/s, "4.62" or "--" */
 	std::string dropped_frames;  /* "12 (0.3%)" or "--" */
-	std::string cache;           /* "OK", "HIGH" or "--" */
+	Congestion cache = Congestion::Unknown;
 	std::string service;         /* "YouTube" or "--" */
 	bool recording = false;
 	bool recording_paused = false; /* implies recording */
-	std::string record_duration;   /* "HH:MM:SS", "PAUSED" or "--" */
+	std::string record_duration;   /* "HH:MM:SS" or "--"; paused: the tile shows a word */
 	std::string record_file;       /* file name or "--" */
 	std::string record_size;       /* "1.5 GB" or "--" */
 

@@ -118,7 +118,7 @@ std::string format_db_text(float db)
 MixerValue mixer_value(bool muted, float db)
 {
 	if (muted)
-		return {"MUTE", MixerValueStyle::Mute};
+		return {std::string(), MixerValueStyle::Mute};
 	MixerValue v = {format_db_text(db), MixerValueStyle::Dim};
 	if (v.text == "--")
 		return v;

@@ -52,8 +52,10 @@ struct MixerValue {
 	MixerValueStyle style;
 };
 
-/* The text under a column: "MUTE" when muted (whatever the level), else the dB
- * text, coloured by the zone of the level (green / yellow / red, grey for "--"). */
+/* The value under a column: style Mute and no text when muted (whatever the
+ * level; the tile writes the "mute" word of the current language), else the
+ * dB text, coloured by the zone of the level (green / yellow / red, grey for
+ * "--"). */
 MixerValue mixer_value(bool muted, float db);
 
 /* What a column's dB text shows now (UI thread bookkeeping). */

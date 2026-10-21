@@ -3,6 +3,7 @@
 
 #include "appearance.hpp"
 #include "audio_meter_math.hpp"
+#include "i18n.hpp"
 
 #include <QColor>
 #include <QFont>
@@ -85,28 +86,42 @@ private:
 	int m_h;
 };
 
+QString congestion_text(Congestion c)
+{
+	switch (c) {
+	case Congestion::Ok:
+		return T("Tile.CacheOk");
+	case Congestion::High:
+		return T("Tile.CacheHigh");
+	case Congestion::Unknown:
+		break;
+	}
+	return QStringLiteral("--");
+}
+
 void draw_on_air(const Painter &d, const StatusSnapshot &s)
 {
 	const bool on = s.streaming;
-	d.text(QStringLiteral("ON AIR"), 0.04, 0.96, 0.03, 0.36, 0.30, on ? kRed : kDim);
+	d.text(T("Tile.OnAir"), 0.04, 0.96, 0.03, 0.36, 0.30, on ? kRed : kDim);
 	d.text(QString::fromStdString(s.stream_duration), 0.04, 0.96, 0.37, 0.51, 0.115, on ? kWhite : kDim);
-	d.text(QStringLiteral("DATA RATE Mb/s"), 0.02, 0.58, 0.54, 0.62, 0.062, kCaption, false);
+	d.text(T("Tile.DataRate"), 0.02, 0.58, 0.54, 0.62, 0.062, kCaption, false);
 	d.text(QString::fromStdString(s.bitrate), 0.02, 0.58, 0.61, 0.79, 0.17, on ? kWhite : kDim);
-	d.text(QStringLiteral("CACHE"), 0.60, 0.98, 0.54, 0.62, 0.062, kCaption, false);
-	d.text(QString::fromStdString(s.cache), 0.60, 0.98, 0.61, 0.79, 0.17, s.cache == "HIGH" ? kRed : (on ? kWhite : kDim));
+	d.text(T("Tile.Cache"), 0.60, 0.98, 0.54, 0.62, 0.062, kCaption, false);
+	d.text(congestion_text(s.cache), 0.60, 0.98, 0.61, 0.79, 0.17,
+	       s.cache == Congestion::High ? kRed : (on ? kWhite : kDim));
 	if (on)
-		d.text(QStringLiteral("DROPPED ") + QString::fromStdString(s.dropped_frames), 0.04, 0.96, 0.79, 0.88, 0.065,
-		       kCaption, false);
+		d.text(T("Tile.Dropped", QString::fromStdString(s.dropped_frames)), 0.04, 0.96, 0.79, 0.88, 0.065, kCaption,
+		       false);
 	d.text(QString::fromStdString(s.service), 0.04, 0.96, 0.88, 0.99, 0.085, on ? kWhite : kDim, false);
 }
 
 void draw_rec(const Painter &d, const StatusSnapshot &s)
 {
 	const bool on = s.recording;
-	d.text(QStringLiteral("REC"), 0.04, 0.96, 0.03, 0.36, 0.30, on ? kRed : kDim);
-	d.text(QString::fromStdString(s.record_duration), 0.04, 0.96, 0.37, 0.51, 0.115,
-	       s.recording_paused ? kAmber : (on ? kWhite : kDim));
-	d.text(QStringLiteral("FILE SIZE"), 0.04, 0.96, 0.54, 0.62, 0.062, kCaption, false);
+	d.text(T("Tile.Rec"), 0.04, 0.96, 0.03, 0.36, 0.30, on ? kRed : kDim);
+	d.text(s.recording_paused ? T("Tile.Paused") : QString::fromStdString(s.record_duration), 0.04, 0.96, 0.37, 0.51,
+	       0.115, s.recording_paused ? kAmber : (on ? kWhite : kDim));
+	d.text(T("Tile.FileSize"), 0.04, 0.96, 0.54, 0.62, 0.062, kCaption, false);
 	d.text(QString::fromStdString(s.record_size), 0.04, 0.96, 0.61, 0.82, 0.17, on ? kWhite : kDim);
 	d.text(QString::fromStdString(s.record_file), 0.04, 0.96, 0.86, 0.98, 0.075, on ? kCaption : kDim, false,
 	       Qt::ElideMiddle);
@@ -114,13 +129,13 @@ void draw_rec(const Painter &d, const StatusSnapshot &s)
 
 void draw_clock(const Painter &d, const StatusSnapshot &s)
 {
-	d.text(QStringLiteral("CLOCK"), 0.04, 0.96, 0.07, 0.20, 0.075, kCaption, false);
+	d.text(T("Tile.Clock"), 0.04, 0.96, 0.07, 0.20, 0.075, kCaption, false);
 	d.text(QString::fromStdString(s.clock), 0.03, 0.97, 0.26, 0.82, 0.27, kWhite);
 }
 
 void draw_mixer_placeholder(const Painter &d)
 {
-	d.text(QStringLiteral("Mixer"), 0.04, 0.96, 0.30, 0.70, 0.14, kCaption, false);
+	d.text(T("Tile.Mixer"), 0.04, 0.96, 0.30, 0.70, 0.14, kCaption, false);
 }
 
 QColor value_color(MixerValueStyle style)
@@ -188,7 +203,8 @@ void draw_mixer(QPainter &p, int w, int h, const std::vector<MixerColumnView> &c
 			p.drawText(rect, Qt::AlignCenter, shown);
 		};
 		draw(g.name, QString::fromStdString(col.name), QColor(0xE6, 0xE6, 0xE6), false, true);
-		draw(g.value, QString::fromStdString(col.value), value_color(col.style), true, false);
+		draw(g.value, col.style == MixerValueStyle::Mute ? T("Tile.Mute") : QString::fromStdString(col.value),
+		     value_color(col.style), true, false);
 	}
 }
 

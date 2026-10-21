@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "mixer_feeds.hpp"
 
+#include "i18n.hpp"
+
 #include <array>
 #include <utility>
 
@@ -57,7 +59,7 @@ unsigned MixerFeeds::refresh(int64_t now_ms)
 			} else {
 				Column c;
 				c.channel = kMixerPgm;
-				c.name = "PGM";
+				c.name = T("Tile.MixerProgram").toStdString();
 				c.db_state = {true, kMeterFloorDb, now_ms};
 				next.push_back(std::move(c));
 				changed |= kSetChanged;

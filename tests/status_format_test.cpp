@@ -44,12 +44,13 @@ TEST_CASE("status_format_filesize")
 
 TEST_CASE("status_format_congestion")
 {
-	CHECK(format_congestion(0.0) == "OK");
-	CHECK(format_congestion(0.2) == "OK");
-	CHECK(format_congestion(0.5) == "HIGH");
-	CHECK(format_congestion(1.0) == "HIGH");
-	CHECK(format_congestion(-1.0) == "--");
-	CHECK(format_congestion(std::numeric_limits<double>::quiet_NaN()) == "--");
+	CHECK(congestion_level(0.0) == Congestion::Ok);
+	CHECK(congestion_level(0.2) == Congestion::Ok);
+	CHECK(congestion_level(0.4999) == Congestion::Ok);
+	CHECK(congestion_level(0.5) == Congestion::High);
+	CHECK(congestion_level(1.0) == Congestion::High);
+	CHECK(congestion_level(-1.0) == Congestion::Unknown);
+	CHECK(congestion_level(std::numeric_limits<double>::quiet_NaN()) == Congestion::Unknown);
 }
 
 TEST_CASE("status_friendly_service_name")
@@ -177,7 +178,8 @@ TEST_CASE("status_snapshot_recording_paused")
 	StatusSnapshot s = make_snapshot(raw);
 	CHECK(s.recording);
 	CHECK(s.recording_paused);
-	CHECK(s.record_duration == "PAUSED");
+	/* The duration stays (frozen by the clock); the tile shows the paused word. */
+	CHECK(s.record_duration == "00:01:01");
 
 	raw.recording = false; /* paused without recording is meaningless */
 	s = make_snapshot(raw);
@@ -238,7 +240,7 @@ TEST_CASE("status_snapshot_inactive_new_fields_are_dashes")
 	raw.congestion = 0.1;
 	const StatusSnapshot s = make_snapshot(raw);
 	CHECK(s.service == "--");
-	CHECK(s.cache == "--");
+	CHECK(s.cache == Congestion::Unknown);
 	CHECK(s.record_file == "--");
 	CHECK(s.record_size == "--");
 }
@@ -253,13 +255,13 @@ TEST_CASE("status_snapshot_streaming_service_and_cache")
 	raw.service = "YouTube - RTMPS";
 	const StatusSnapshot s = make_snapshot(raw);
 	CHECK(s.bitrate == "4.62");
-	CHECK(s.cache == "OK");
+	CHECK(s.cache == Congestion::Ok);
 	CHECK(s.service == "YouTube");
 
 	raw.congestion = 0.9;
-	CHECK(make_snapshot(raw).cache == "HIGH");
+	CHECK(make_snapshot(raw).cache == Congestion::High);
 	raw.have_stream_output = false; /* no output object at this instant */
-	CHECK(make_snapshot(raw).cache == "--");
+	CHECK(make_snapshot(raw).cache == Congestion::Unknown);
 }
 
 TEST_CASE("status_snapshot_recording_file_and_size")

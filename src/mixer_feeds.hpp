@@ -28,7 +28,7 @@
  * the same time.
  *
  * The dB text of a column follows db_text_update_due (at most twice a second,
- * only for a change of 1 dB or more); "MUTE" shows at once.
+ * only for a change of 1 dB or more); the mute word shows at once.
  *
  * Audio threads are not involved here beyond AudioMeter's own rules (atomics
  * only). The destructor detaches everything. */

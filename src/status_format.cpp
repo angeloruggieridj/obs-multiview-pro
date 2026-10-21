@@ -68,11 +68,11 @@ std::string format_filesize(int64_t bytes)
 	return buf;
 }
 
-std::string format_congestion(double congestion)
+Congestion congestion_level(double congestion)
 {
 	if (!(congestion >= 0.0))
-		return kNone; /* negative or NaN */
-	return congestion >= 0.5 ? "HIGH" : "OK";
+		return Congestion::Unknown; /* negative or NaN */
+	return congestion >= 0.5 ? Congestion::High : Congestion::Ok;
 }
 
 std::string friendly_service_name(const std::string &service, const std::string &server_url)
@@ -138,7 +138,6 @@ StatusSnapshot make_snapshot(const RawStatus &raw)
 	s.stream_duration = kNone;
 	s.bitrate = kNone;
 	s.dropped_frames = kNone;
-	s.cache = kNone;
 	s.service = kNone;
 	s.record_duration = kNone;
 	s.record_file = kNone;
@@ -151,11 +150,11 @@ StatusSnapshot make_snapshot(const RawStatus &raw)
 		s.bitrate = format_bitrate_mbps(raw.bitrate_kbps);
 		if (raw.have_stream_output) {
 			s.dropped_frames = format_dropped(raw.dropped_frames, raw.total_frames);
-			s.cache = format_congestion(raw.congestion);
+			s.cache = congestion_level(raw.congestion);
 		}
 	}
 	if (raw.recording) {
-		s.record_duration = s.recording_paused ? "PAUSED" : format_duration(raw.record_seconds);
+		s.record_duration = format_duration(raw.record_seconds); /* frozen while paused */
 		if (!raw.record_path.empty())
 			s.record_file = file_name_of(raw.record_path);
 		s.record_size = format_filesize(raw.record_bytes);

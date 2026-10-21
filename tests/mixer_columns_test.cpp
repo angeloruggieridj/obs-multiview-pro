@@ -127,10 +127,11 @@ TEST_CASE("mixer_value_text_and_style")
 	CHECK(mixer_value(false, -kInf).style == MixerValueStyle::Dim);
 	CHECK(mixer_value(false, -kInf).text == "--");
 	CHECK(mixer_value(false, -12.34f).text == "-12.3");
-	/* muted wins over any level */
-	CHECK(mixer_value(true, -6.f).text == "MUTE");
+	/* muted wins over any level; the word comes from the locale (no text here) */
+	CHECK(mixer_value(true, -6.f).text.empty());
 	CHECK(mixer_value(true, -6.f).style == MixerValueStyle::Mute);
-	CHECK(mixer_value(true, -kInf).text == "MUTE");
+	CHECK(mixer_value(true, -kInf).text.empty());
+	CHECK(mixer_value(true, -kInf).style == MixerValueStyle::Mute);
 }
 
 TEST_CASE("mixer_db_text_update_rule")
