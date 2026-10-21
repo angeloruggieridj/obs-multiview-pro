@@ -156,6 +156,17 @@ TEST_CASE("appearance_follow_saved_toggles")
 	CHECK(follow_saved_toggles(preview, saved).label_opacity == 100);
 }
 
+TEST_CASE("appearance_topmost_check_action")
+{
+	/* while on top: always re-assert (idempotent, and it also restores the
+	 * order inside the topmost band when a window was raised above) */
+	CHECK(topmost_check_action(true, true) == TopmostAction::Assert);
+	CHECK(topmost_check_action(true, false) == TopmostAction::Assert);
+	/* while off: release only a window that is still topmost */
+	CHECK(topmost_check_action(false, true) == TopmostAction::Release);
+	CHECK(topmost_check_action(false, false) == TopmostAction::None);
+}
+
 TEST_CASE("appearance_tile_meters")
 {
 	Appearance a;

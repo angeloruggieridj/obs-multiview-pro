@@ -27,6 +27,13 @@ Appearance follow_saved_toggles(const Appearance &current, const Appearance &sav
 	return out;
 }
 
+TopmostAction topmost_check_action(bool keep, bool is_top)
+{
+	if (keep)
+		return TopmostAction::Assert;
+	return is_top ? TopmostAction::Release : TopmostAction::None;
+}
+
 bool parse_color(const std::string &text, uint32_t &rgb)
 {
 	size_t i = 0;

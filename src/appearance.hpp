@@ -54,6 +54,14 @@ Appearance normalized(const Appearance &a);
  * reaches the windows. */
 Appearance follow_saved_toggles(const Appearance &current, const Appearance &saved);
 
+/* What a periodic check of a window that must follow "always on top" does
+ * (`keep`: the windows are on top now; `is_top`: the window's topmost bit).
+ * While on top it always re-asserts the topmost band (idempotent; it also
+ * brings the window back to the top of the band when another topmost window
+ * was raised above it); while off it releases only a window still topmost. */
+enum class TopmostAction { None, Assert, Release };
+TopmostAction topmost_check_action(bool keep, bool is_top);
+
 /* "#RRGGBB" or "RRGGBB", any case, nothing else (no spaces, no short form).
  * On failure `rgb` is left untouched. */
 bool parse_color(const std::string &text, uint32_t &rgb);
