@@ -5,6 +5,7 @@
 
 #include <plugin-support.h>
 
+#include <initializer_list>
 #include <utility>
 
 void MixerFeeds::clear()

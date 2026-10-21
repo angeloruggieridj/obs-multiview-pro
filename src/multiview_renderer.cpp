@@ -1439,7 +1439,7 @@ void MultiviewRenderer::draw_meters(const RenderSnapshot &snap, float fw, float 
 		const size_t n = std::min(mixer->columns.size(), kMixerMaxColumns);
 		if (mixer->generation != m_meter.mixer_generation) {
 			ChannelBallistics old[kMixerMaxColumns][2];
-			MixerSourceId old_ids[kMixerMaxColumns];
+			MixerSourceId old_ids[kMixerMaxColumns] = {};
 			const size_t old_n = std::min(m_meter.mixer_count, kMixerMaxColumns);
 			for (size_t i = 0; i < old_n; ++i) {
 				old[i][0] = m_meter.mixer[i][0];
