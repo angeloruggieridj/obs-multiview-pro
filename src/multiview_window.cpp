@@ -123,7 +123,7 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 		wh = windowHandle();
 	}
 	if (wh) {
-		connect(wh, &QWindow::visibleChanged, this, [this](bool visible) {
+		m_visible_connection = connect(wh, &QWindow::visibleChanged, this, [this](bool visible) {
 			if (!visible) {
 #if !defined(_WIN32) && !defined(__APPLE__)
 				/* The native surface goes away when hidden (as OBSQTDisplay). */
@@ -136,7 +136,7 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 			else
 				resize_display();
 		});
-		connect(wh, &QWindow::screenChanged, this, [this](QScreen *) {
+		m_screen_connection = connect(wh, &QWindow::screenChanged, this, [this](QScreen *) {
 			create_display();
 			resize_display();
 			update_color_space();
@@ -158,6 +158,12 @@ MultiviewWindow::~MultiviewWindow()
 	 * windows synchronously). */
 	SettingsStore::instance().flush();
 	m_destroying = true;
+	/* Nothing from the QWindow may reach this object while its members die
+	 * (the window handle outlives them until ~QWidget finishes). */
+	QObject::disconnect(m_visible_connection);
+	QObject::disconnect(m_screen_connection);
+	if (QWindow *wh = windowHandle())
+		wh->removeEventFilter(this);
 	m_label_scale_timer.stop();
 	/* 1. Stop drawing: removing the draw callback blocks until a callback that
 	 *    is running on the graphics thread has returned. */

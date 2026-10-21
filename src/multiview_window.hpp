@@ -101,6 +101,10 @@ private:
 	std::unique_ptr<MultiviewRenderer> m_renderer;
 	std::unique_ptr<StatusMonitor> m_monitor; /* observes m_state: destroyed before it */
 	obs_display_t *m_display = nullptr;
+	/* Handles to the QWindow connections: cut in the destructor, before the
+	 * members they use are gone. */
+	QMetaObject::Connection m_visible_connection;
+	QMetaObject::Connection m_screen_connection;
 	bool m_destroying = false;
 	bool m_window_handle_warned = false;
 
