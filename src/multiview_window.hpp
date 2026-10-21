@@ -49,6 +49,8 @@ protected:
 	void mouseDoubleClickEvent(QMouseEvent *event) override;
 	void focusOutEvent(QFocusEvent *event) override;
 	void hideEvent(QHideEvent *event) override;
+	void showEvent(QShowEvent *event) override;
+	void changeEvent(QEvent *event) override;
 
 private:
 	static void draw_callback(void *param, uint32_t cx, uint32_t cy);
@@ -84,6 +86,9 @@ private:
 	void create_display();
 	void destroy_display();
 	void resize_display();
+	/* Renders only while the window is shown and not minimised (UI thread,
+	 * idempotent, null-safe); a restored window draws again at once. */
+	void update_display_enabled();
 	void update_color_space();
 	QSize pixel_size() const;
 

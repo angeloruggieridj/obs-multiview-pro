@@ -28,6 +28,7 @@
 #include <QPlatformSurfaceEvent>
 #include <QResizeEvent>
 #include <QScreen>
+#include <QShowEvent>
 #include <QWindow>
 
 #if defined(_WIN32)
@@ -262,6 +263,7 @@ void MultiviewWindow::create_display()
 		return;
 	}
 	obs_display_add_draw_callback(m_display, &MultiviewWindow::draw_callback, this);
+	update_display_enabled();
 	update_label_scale();
 }
 
@@ -282,6 +284,13 @@ void MultiviewWindow::resize_display()
 	if (size.width() <= 0 || size.height() <= 0)
 		return;
 	obs_display_resize(m_display, static_cast<uint32_t>(size.width()), static_cast<uint32_t>(size.height()));
+}
+
+void MultiviewWindow::update_display_enabled()
+{
+	if (!m_display)
+		return;
+	obs_display_set_enabled(m_display, isVisible() && !isMinimized());
 }
 
 void MultiviewWindow::update_color_space()
@@ -613,6 +622,23 @@ void MultiviewWindow::hideEvent(QHideEvent *event)
 {
 	cancel_press();
 	QWidget::hideEvent(event);
+	update_display_enabled();
+}
+
+void MultiviewWindow::showEvent(QShowEvent *event)
+{
+	QWidget::showEvent(event);
+	update_display_enabled();
+}
+
+void MultiviewWindow::changeEvent(QEvent *event)
+{
+	QWidget::changeEvent(event);
+	if (event->type() == QEvent::WindowStateChange && !m_destroying) {
+		update_display_enabled();
+		if (!isMinimized())
+			resize_display(); /* the size may have changed meanwhile */
+	}
 }
 
 void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
