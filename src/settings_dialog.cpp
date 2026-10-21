@@ -121,23 +121,22 @@ void open_release_url(const std::string &url)
 
 SettingsDialog::SettingsDialog(QWidget *parent) : QDialog(parent)
 {
-	setWindowTitle(tr("Multiview Settings"));
+	setWindowTitle(T("Dialog.Title"));
 	setAttribute(Qt::WA_DeleteOnClose);
 	setWindowFlag(Qt::WindowContextHelpButtonHint, false);
 
 	auto *tabs = new QTabWidget(this);
 	m_tabs = tabs;
-	/* Explicit English: the plugin has no translations, and Qt would translate
-	 * these stock texts on its own. */
-	tabs->addTab(build_appearance_page(), QStringLiteral("Appearance"));
+	tabs->addTab(build_appearance_page(), T("Dialog.Tab.Appearance"));
 	m_updates_page = build_updates_page();
-	tabs->addTab(m_updates_page, QStringLiteral("Updates"));
-	tabs->addTab(build_about_page(), QStringLiteral("About"));
+	tabs->addTab(m_updates_page, T("Dialog.Tab.Updates"));
+	tabs->addTab(build_about_page(), T("Dialog.Tab.About"));
 
 	m_buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Apply, this);
-	m_buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("OK"));
-	m_buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("Cancel"));
-	m_buttons->button(QDialogButtonBox::Apply)->setText(QStringLiteral("Apply"));
+	/* The plugin's own texts: Qt would otherwise use its own translations. */
+	m_buttons->button(QDialogButtonBox::Ok)->setText(T("Dialog.Button.OK"));
+	m_buttons->button(QDialogButtonBox::Cancel)->setText(T("Dialog.Button.Cancel"));
+	m_buttons->button(QDialogButtonBox::Apply)->setText(T("Dialog.Button.Apply"));
 	/* Enter in the hex field must only finish the edit, never press OK. */
 	for (QAbstractButton *b : m_buttons->buttons())
 		if (auto *pb = qobject_cast<QPushButton *>(b)) {
@@ -190,7 +189,7 @@ QWidget *SettingsDialog::build_appearance_page()
 	/* Frame colour: swatch button (opens the colour dialog) + hex field. */
 	m_swatch = new QPushButton;
 	m_swatch->setFixedSize(56, 26);
-	m_swatch->setToolTip(tr("Choose the border colour"));
+	m_swatch->setToolTip(T("Dialog.Appearance.ChooseBorderColor"));
 	m_hex = new QLineEdit;
 	m_hex->setMaxLength(7);
 	m_hex->setPlaceholderText(QStringLiteral("#999999"));
@@ -201,7 +200,7 @@ QWidget *SettingsDialog::build_appearance_page()
 	color_row->addWidget(m_swatch);
 	color_row->addWidget(m_hex);
 	color_row->addStretch(1);
-	form->addRow(tr("Border colour"), color_row);
+	form->addRow(T("Dialog.Appearance.BorderColor"), color_row);
 	connect(m_swatch, &QPushButton::clicked, this, [this] { pick_color(); });
 	connect(m_hex, &QLineEdit::textEdited, this, [this](const QString &text) {
 		uint32_t rgb;
@@ -234,14 +233,12 @@ QWidget *SettingsDialog::build_appearance_page()
 		connect(slider, &QSlider::valueChanged, this, changed);
 		connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), this, changed);
 	};
-	add_percent(tr("Label opacity"), m_label_slider, m_label_spin, &Appearance::label_opacity);
-	add_percent(tr("Meter opacity"), m_meter_slider, m_meter_spin, &Appearance::meter_opacity);
+	add_percent(T("Dialog.Appearance.LabelOpacity"), m_label_slider, m_label_spin, &Appearance::label_opacity);
+	add_percent(T("Dialog.Appearance.MeterOpacity"), m_meter_slider, m_meter_spin, &Appearance::meter_opacity);
 
-	auto *hint = new QLabel(tr("Border colour: the frame under and around the tiles. Label opacity: scene names, "
-				   "Preview and Program (50 % is the OBS look). Meter opacity: the audio meters "
-				   "(100 % is the OBS look)."));
+	auto *hint = new QLabel(T("Dialog.Appearance.Hint"));
 	hint->setWordWrap(true);
-	auto *reset = new QPushButton(QStringLiteral("Reset to defaults"));
+	auto *reset = new QPushButton(T("Dialog.Appearance.Reset"));
 	reset->setAutoDefault(false);
 	connect(reset, &QPushButton::clicked, this, [this] { values_edited(Appearance()); });
 
@@ -261,7 +258,7 @@ QWidget *SettingsDialog::build_updates_page()
 	auto *page = new QWidget;
 	auto *layout = new QVBoxLayout(page);
 
-	layout->addWidget(new QLabel(QStringLiteral("Installed version: %1").arg(QString::fromUtf8(PLUGIN_VERSION))));
+	layout->addWidget(new QLabel(T("Dialog.Updates.InstalledVersion", QString::fromUtf8(PLUGIN_VERSION))));
 
 	m_update_status = new QLabel;
 	m_update_status->setWordWrap(true);
@@ -269,7 +266,7 @@ QWidget *SettingsDialog::build_updates_page()
 	QFont bold = m_update_status->font();
 	bold.setBold(true);
 	m_update_status->setFont(bold);
-	m_check_now = new QPushButton(QStringLiteral("Check for updates now"));
+	m_check_now = new QPushButton(T("Dialog.Updates.CheckNow"));
 	m_check_now->setAutoDefault(false);
 	auto *status_row = new QHBoxLayout;
 	status_row->addWidget(m_update_status, 1);
@@ -278,8 +275,8 @@ QWidget *SettingsDialog::build_updates_page()
 	connect(m_check_now, &QPushButton::clicked, this,
 		[this] { UpdateManager::instance().check_now(m_prereleases->isChecked()); });
 
-	m_auto_check = new QCheckBox(QStringLiteral("Check for updates automatically (once a day, contacts github.com)"));
-	m_prereleases = new QCheckBox(QStringLiteral("Include pre-releases"));
+	m_auto_check = new QCheckBox(T("Dialog.Updates.AutoCheck"));
+	m_prereleases = new QCheckBox(T("Dialog.Updates.IncludePrereleases"));
 	layout->addWidget(m_auto_check);
 	layout->addWidget(m_prereleases);
 	connect(m_auto_check, &QCheckBox::toggled, this, [this] { update_buttons(); });
@@ -288,15 +285,15 @@ QWidget *SettingsDialog::build_updates_page()
 	m_changelog = new OfflineTextBrowser;
 	m_changelog->setOpenLinks(false);
 	m_changelog->setOpenExternalLinks(false);
-	m_changelog->setPlaceholderText(QStringLiteral("The change log of newer versions appears here after a check."));
+	m_changelog->setPlaceholderText(T("Dialog.Updates.ChangelogPlaceholder"));
 	m_changelog->setMinimumHeight(180);
 	connect(m_changelog, &QTextBrowser::anchorClicked, this,
 		[](const QUrl &url) { open_release_url(url.toString(QUrl::FullyEncoded).toStdString()); });
 	layout->addWidget(m_changelog, 1);
 
-	m_open_page = new QPushButton(QStringLiteral("Open download page"));
+	m_open_page = new QPushButton(T("Dialog.Updates.OpenDownloadPage"));
 	m_open_page->setAutoDefault(false);
-	m_skip = new QPushButton(QStringLiteral("Skip this version"));
+	m_skip = new QPushButton(T("Dialog.Updates.SkipVersion"));
 	m_skip->setAutoDefault(false);
 	auto *buttons = new QHBoxLayout;
 	buttons->addWidget(m_open_page);
@@ -312,11 +309,7 @@ QWidget *SettingsDialog::build_updates_page()
 	});
 	connect(m_skip, &QPushButton::clicked, this, [] { UpdateManager::instance().skip_latest(); });
 
-	auto *hint = new QLabel(QStringLiteral(
-		"A check sends one request to api.github.com; the only information it carries is the plugin "
-		"version (in the User-Agent). Automatic checks run at most once a day and never while "
-		"streaming or recording. Nothing is downloaded or installed: the download page opens in "
-		"your browser."));
+	auto *hint = new QLabel(T("Dialog.Updates.Privacy"));
 	hint->setWordWrap(true);
 	layout->addWidget(hint);
 	return page;
@@ -375,15 +368,15 @@ QWidget *SettingsDialog::build_about_page()
 	auto *page = new QWidget;
 	auto *layout = new QVBoxLayout(page);
 
-	auto *title = new QLabel(QStringLiteral("Multiview Pro for OBS"));
+	auto *title = new QLabel(T("Dialog.About.Title"));
 	QFont f = title->font();
 	f.setBold(true);
 	f.setPointSizeF(f.pointSizeF() * 1.4);
 	title->setFont(f);
 	layout->addWidget(title);
-	layout->addWidget(new QLabel(tr("Version %1").arg(QString::fromUtf8(PLUGIN_VERSION))));
-	layout->addWidget(new QLabel(tr("License: GPL-2.0-or-later")));
-	layout->addWidget(new QLabel(QStringLiteral("Copyright (C) 2026 Angelo Ruggieri")));
+	layout->addWidget(new QLabel(T("Dialog.About.Version", QString::fromUtf8(PLUGIN_VERSION))));
+	layout->addWidget(new QLabel(T("Dialog.About.License")));
+	layout->addWidget(new QLabel(T("Dialog.About.Copyright")));
 
 	auto *link = new QLabel(QStringLiteral("<a href=\"%1\">%1</a>").arg(QString::fromLatin1(kRepositoryUrl)));
 	link->setTextFormat(Qt::RichText);
@@ -455,7 +448,7 @@ void SettingsDialog::pick_color()
 	}
 	auto *chooser = new QColorDialog(to_qcolor(m_current.border_rgb), this);
 	chooser->setAttribute(Qt::WA_DeleteOnClose);
-	chooser->setWindowTitle(tr("Border colour"));
+	chooser->setWindowTitle(T("Dialog.Appearance.BorderColor"));
 	m_color_dialog = chooser;
 	/* Only OK sends colorSelected; Cancel / closing changes nothing. */
 	connect(chooser, &QColorDialog::colorSelected, this, [this](const QColor &c) {
