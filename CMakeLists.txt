@@ -51,6 +51,7 @@ target_sources(
     src/audio_meter_math.cpp src/audio_meter_math.hpp src/audio_meter.cpp src/audio_meter.hpp
     src/meter_scale.cpp src/meter_scale.hpp
     src/mixer_columns.cpp src/mixer_columns.hpp src/mixer_feeds.cpp src/mixer_feeds.hpp
+    src/tile_meters.cpp src/tile_meters.hpp src/meter_pool.cpp src/meter_pool.hpp
     src/settings.cpp src/settings.hpp src/settings_store.cpp src/settings_store.hpp
     src/appearance.cpp src/appearance.hpp src/settings_dialog.cpp src/settings_dialog.hpp
     src/update_logic.cpp src/update_logic.hpp src/update_checker.cpp src/update_checker.hpp
