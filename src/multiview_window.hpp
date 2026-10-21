@@ -8,8 +8,10 @@
 
 #include <QElapsedTimer>
 #include <QPoint>
+#include <QPointer>
 #include <QTimer>
 #include <QWidget>
+#include <QWindow>
 
 #include <cstdint>
 #include <memory>
@@ -36,7 +38,12 @@ public:
 
 	int instance() const { return m_instance; }
 
+	/* Keeps the window above other windows (the global "always on top"
+	 * option). Applied at once; position, size and state are kept. */
+	void set_always_on_top(bool on);
+
 protected:
+	bool event(QEvent *event) override;
 	void paintEvent(QPaintEvent *event) override;
 	void resizeEvent(QResizeEvent *event) override;
 	void moveEvent(QMoveEvent *event) override;
@@ -83,6 +90,21 @@ private:
 	void save_options();
 	void save_assignment();
 	void load_assignment();
+	/* Connects to the native window's QWindow (visibility, screen, surface
+	 * events). Idempotent; follows a QWindow that was replaced. */
+	void hook_window();
+	void unhook_window();
+	/* Puts m_on_top on the native window. Windows: SetWindowPos (the window
+	 * is not recreated). Elsewhere: the Qt flag (see apply_on_top_qt). */
+	void apply_on_top();
+	/* Qt::WindowStaysOnTopHint through the Qt API. Changing a window flag
+	 * hides the window and may give it a new native window, so the display
+	 * is destroyed first, the QWindow hooks are installed again and the
+	 * window is shown again with its geometry and state. */
+	void apply_on_top_qt();
+#if defined(_WIN32)
+	void apply_on_top_win32();
+#endif
 	void create_display();
 	void destroy_display();
 	void resize_display();
@@ -110,6 +132,8 @@ private:
 	 * members they use are gone. */
 	QMetaObject::Connection m_visible_connection;
 	QMetaObject::Connection m_screen_connection;
+	QPointer<QWindow> m_hooked_window; /* the QWindow they belong to */
+	bool m_on_top = false;             /* "always on top", as applied */
 	bool m_destroying = false;
 	bool m_window_handle_warned = false;
 

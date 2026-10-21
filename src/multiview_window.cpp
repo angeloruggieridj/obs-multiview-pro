@@ -90,6 +90,7 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 	connect(&SettingsStore::instance(), &SettingsStore::appearance_changed, this, [this](const Appearance &a) {
 		if (m_renderer)
 			m_renderer->set_appearance(a);
+		set_always_on_top(a.always_on_top);
 	});
 	/* Saved options first (the slot count depends on the preset), then the
 	 * saved assignment of the current scene collection. Nothing is written
@@ -119,38 +120,124 @@ MultiviewWindow::MultiviewWindow(int instance, QWidget *parent) : QWidget(parent
 	m_label_scale_timer.setInterval(150);
 	connect(&m_label_scale_timer, &QTimer::timeout, this, &MultiviewWindow::update_label_scale);
 
-	QWindow *wh = windowHandle();
-	if (!wh) {
+	if (!windowHandle())
 		winId(); /* force creation of the native window */
-		wh = windowHandle();
-	}
-	if (wh) {
-		m_visible_connection = connect(wh, &QWindow::visibleChanged, this, [this](bool visible) {
-			if (!visible) {
-#if !defined(_WIN32) && !defined(__APPLE__)
-				/* The native surface goes away when hidden (as OBSQTDisplay). */
-				destroy_display();
-#endif
-				return;
-			}
-			if (!m_display)
-				create_display();
-			else
-				resize_display();
-		});
-		m_screen_connection = connect(wh, &QWindow::screenChanged, this, [this](QScreen *) {
-			create_display();
-			resize_display();
-			update_color_space();
-			update_label_scale(); /* DPI may differ */
-		});
-		wh->installEventFilter(this);
-		/* Same marker as OBSProjector: "Hide OBS windows from screen capture"
-		 * leaves projector-like windows capturable (OBSBasic::SetDisplayAffinity). */
-		wh->setProperty("isOBSProjectorWindow", true);
-	}
+	hook_window();
+	/* Global option, read now (a window opened later honours it too), then
+	 * followed with the appearance. */
+	set_always_on_top(SettingsStore::instance().appearance().always_on_top);
 
 	obs_log(LOG_INFO, "MultiviewWindow created");
+}
+
+void MultiviewWindow::hook_window()
+{
+	QWindow *wh = windowHandle();
+	if (!wh || wh == m_hooked_window || m_destroying)
+		return;
+	unhook_window();
+	m_visible_connection = connect(wh, &QWindow::visibleChanged, this, [this](bool visible) {
+		if (!visible) {
+#if !defined(_WIN32) && !defined(__APPLE__)
+			/* The native surface goes away when hidden (as OBSQTDisplay). */
+			destroy_display();
+#endif
+			return;
+		}
+		if (!m_display)
+			create_display();
+		else
+			resize_display();
+	});
+	m_screen_connection = connect(wh, &QWindow::screenChanged, this, [this](QScreen *) {
+		create_display();
+		resize_display();
+		update_color_space();
+		update_label_scale(); /* DPI may differ */
+	});
+	wh->installEventFilter(this);
+	/* Same marker as OBSProjector: "Hide OBS windows from screen capture"
+	 * leaves projector-like windows capturable (OBSBasic::SetDisplayAffinity). */
+	wh->setProperty("isOBSProjectorWindow", true);
+	m_hooked_window = wh;
+}
+
+void MultiviewWindow::unhook_window()
+{
+	QObject::disconnect(m_visible_connection);
+	QObject::disconnect(m_screen_connection);
+	if (m_hooked_window)
+		m_hooked_window->removeEventFilter(this);
+	m_hooked_window = nullptr;
+}
+
+bool MultiviewWindow::event(QEvent *event)
+{
+	/* The native window was (re)created: the hooks and the topmost state
+	 * belong to the old one. */
+	if (event->type() == QEvent::WinIdChange && !m_destroying && windowHandle()) {
+		hook_window();
+#if defined(_WIN32)
+		apply_on_top_win32();
+#endif
+	}
+	return QWidget::event(event);
+}
+
+void MultiviewWindow::set_always_on_top(bool on)
+{
+	if (m_destroying)
+		return;
+	m_on_top = on;
+	apply_on_top();
+}
+
+void MultiviewWindow::apply_on_top()
+{
+#if defined(_WIN32)
+	apply_on_top_win32();
+#else
+	apply_on_top_qt();
+#endif
+}
+
+#if defined(_WIN32)
+/* Changes only the z-order band of the existing native window: no new
+ * window, no hide / show, the display and its hooks stay as they are. */
+void MultiviewWindow::apply_on_top_win32()
+{
+	QWindow *wh = windowHandle();
+	if (!wh)
+		return;
+	HWND hwnd = reinterpret_cast<HWND>(wh->winId());
+	if (!hwnd)
+		return;
+	const bool is_top = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+	if (is_top == m_on_top)
+		return;
+	SetWindowPos(hwnd, m_on_top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+		     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+#endif
+
+void MultiviewWindow::apply_on_top_qt()
+{
+	if (windowFlags().testFlag(Qt::WindowStaysOnTopHint) == m_on_top)
+		return;
+	const bool was_visible = isVisible();
+	const Qt::WindowStates state = windowState();
+	const QRect normal = normalGeometry().isValid() ? normalGeometry() : geometry();
+	/* No draw callback may outlive the surface it draws to. */
+	cancel_press();
+	destroy_display();
+	setWindowFlag(Qt::WindowStaysOnTopHint, m_on_top); /* hides the window */
+	hook_window(); /* a new QWindow, if Qt made one */
+	if (!was_visible)
+		return;
+	setGeometry(normal);
+	setWindowState(state);
+	show();
+	/* The display comes back on expose / paint (create_display). */
 }
 
 MultiviewWindow::~MultiviewWindow()
@@ -162,10 +249,7 @@ MultiviewWindow::~MultiviewWindow()
 	m_destroying = true;
 	/* Nothing from the QWindow may reach this object while its members die
 	 * (the window handle outlives them until ~QWidget finishes). */
-	QObject::disconnect(m_visible_connection);
-	QObject::disconnect(m_screen_connection);
-	if (QWindow *wh = windowHandle())
-		wh->removeEventFilter(this);
+	unhook_window();
 	m_label_scale_timer.stop();
 	/* 1. Stop drawing: removing the draw callback blocks until a callback that
 	 *    is running on the graphics thread has returned. */
@@ -697,6 +781,12 @@ void MultiviewWindow::contextMenuEvent(QContextMenuEvent *event)
 			}
 		});
 	}
+	/* Global option (every window, saved at once); the settings dialog
+	 * follows it. */
+	QAction *on_top = menu->addAction(T("Menu.AlwaysOnTop"));
+	on_top->setCheckable(true);
+	on_top->setChecked(m_on_top);
+	connect(on_top, &QAction::toggled, this, [](bool on) { SettingsStore::instance().set_always_on_top(on); });
 	menu->addSeparator();
 	QAction *settings = menu->addAction(T("Menu.Settings"));
 	connect(settings, &QAction::triggered, this, [] { open_settings_dialog(); });
