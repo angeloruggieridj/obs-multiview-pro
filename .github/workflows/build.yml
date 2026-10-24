@@ -158,3 +158,60 @@ jobs:
             build_x86_64/rundir/RelWithDebInfo/*.so
             build_x86_64/rundir/RelWithDebInfo/obs-multiview-pro/locale/*.ini
           if-no-files-found: error
+
+  # OBS 33 dropped Ubuntu 24.04: its Linux builds and the PPA target 26.04,
+  # which has Qt >= 6.10, so the Wayland branch of multiview_window.cpp (Qt >=
+  # 6.9) is compiled in here. Compiles and tests only, and is allowed to fail
+  # while the 26.04 package names and the PPA's libobs are unverified; the
+  # release does not use this artifact yet. The libobs it builds against is
+  # whatever the PPA offers for 26.04: a plugin built against libobs 33 is
+  # rejected by OBS 32 (modules compiled with a newer libobs are refused).
+  ubuntu-26:
+    name: Ubuntu 26.04 x86_64 (OBS 33, not blocking)
+    runs-on: ubuntu-26.04
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          ppa_ready() { [[ "$(apt-cache policy obs-studio | awk '/Candidate:/ {print $2}')" == *obsproject* ]]; }
+          for attempt in 1 2 3 4 5 6; do
+            sudo apt-get update || true
+            ppa_ready && break
+            echo "OBS Studio PPA index not available (attempt $attempt of 6), retrying in 30 s"
+            sleep 30
+          done
+          ppa_ready || { echo "::error::The OBS Studio PPA is not available: not building against another libobs."; exit 1; }
+          apt-cache policy obs-studio | sed -n '1,4p'
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config ccache \
+            libsimde-dev obs-studio \
+            qt6-base-dev libqt6svg6-dev qt6-base-private-dev \
+            libcurl4-openssl-dev
+          # The OpenGL ES headers moved between Ubuntu releases.
+          sudo apt-get install -y --no-install-recommends libgles2-mesa-dev || sudo apt-get install -y --no-install-recommends libgles-dev
+          qmake6 -query QT_VERSION || true
+
+      - name: Configure
+        run: cmake --preset ubuntu-ci-x86_64
+
+      - name: Build
+        run: cmake --build --preset ubuntu-ci-x86_64 --parallel
+
+      - name: Test
+        run: ctest --test-dir build_x86_64 --output-on-failure -C "$BUILD_CONFIG"
+
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: obs-multiview-pro-ubuntu-26.04-x86_64
+          path: |
+            build_x86_64/rundir/RelWithDebInfo/*.so
+            build_x86_64/rundir/RelWithDebInfo/obs-multiview-pro/locale/*.ini
+          if-no-files-found: error

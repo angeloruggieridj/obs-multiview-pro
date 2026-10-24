@@ -9,6 +9,9 @@
 | `windows` | windows-2022 | `windows-ci-x64` | `build_x64` | `obs-multiview-pro-windows-x64` (dll + pdb + `obs-multiview-pro/locale/*.ini`) |
 | `macos` | macos-15 (Xcode) | `macos-ci` | `build_macos` | `obs-multiview-pro-macos-universal` (zip del bundle `.plugin`, con `Contents/Resources/locale/*.ini`) |
 | `ubuntu` | ubuntu-24.04 | `ubuntu-ci-x86_64` | `build_x86_64` | `obs-multiview-pro-ubuntu-24.04-x86_64` (`.so` + `obs-multiview-pro/locale/*.ini`) |
+| `ubuntu-26` | ubuntu-26.04 | `ubuntu-ci-x86_64` | `build_x86_64` | `obs-multiview-pro-ubuntu-26.04-x86_64` (non usato dalla release) |
+
+`ubuntu-26` ha `continue-on-error`: OBS 33 non supporta piu' Ubuntu 24.04 e il suo PPA punta a 26.04 (Qt >= 6.10, quindi il ramo Wayland di `multiview_window.cpp` viene compilato). Nomi dei pacchetti su 26.04 e libobs del PPA non sono ancora verificati: guardare il primo run, poi togliere `continue-on-error` e decidere se pubblicare lo zip Linux per 26.04. Una DLL/`.so` compilata contro libobs 33 viene rifiutata da OBS 32 (i moduli compilati con una libobs piu' nuova sono scartati), quindi `buildspec.json` resta su OBS 32.1.2 finche' si supporta OBS 32: la stessa DLL Windows e' stata provata su OBS 33.0.0.
 
 Ogni job: checkout, configure col preset CI, build `RelWithDebInfo`, `ctest --output-on-failure -C RelWithDebInfo` (i test non richiedono OBS ne' Qt), upload del plugin. I preset CI attivano `CMAKE_COMPILE_WARNING_AS_ERROR`: qualunque warning del compilatore fa fallire la build.
 
