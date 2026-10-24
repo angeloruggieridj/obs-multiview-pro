@@ -184,10 +184,18 @@ jobs:
           printf 'Package: *\nPin: release o=LP-PPA-obsproject-obs-studio\nPin-Priority: 1001\n' \
             | sudo tee /etc/apt/preferences.d/obsproject-ppa
           ls /etc/apt/sources.list.d
+          dpkg --print-architecture; dpkg --print-foreign-architectures; apt-config dump | grep -i architectures || true
           ppa_ready() { [[ "$(apt-cache policy obs-studio | awk '/Candidate:/ {print $2}')" == *obsproject* ]]; }
           for attempt in 1 2 3 4 5 6; do
             sudo apt-get update || true
             apt-cache policy obs-studio libobs-dev | sed -n '1,14p'
+            # Ubuntu 26.04 runners list the amd64v3 architecture, for which the
+            # PPA has no packages; its plain amd64 ones are what we want.
+            if ! ppa_ready; then
+              echo 'APT::Architectures { "amd64"; };' | sudo tee /etc/apt/apt.conf.d/99obs-architectures
+              sudo apt-get update || true
+              apt-cache policy obs-studio | sed -n '1,8p'
+            fi
             ppa_ready && break
             echo "OBS Studio PPA index not available (attempt $attempt of 6), retrying in 30 s"
             sleep 30
