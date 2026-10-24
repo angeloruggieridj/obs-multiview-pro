@@ -161,15 +161,13 @@ jobs:
 
   # OBS 33 dropped Ubuntu 24.04: its Linux builds and the PPA target 26.04,
   # which has Qt >= 6.10, so the Wayland branch of multiview_window.cpp (Qt >=
-  # 6.9) is compiled in here. Compiles and tests only, and is allowed to fail
-  # while the 26.04 package names and the PPA's libobs are unverified; the
-  # release does not use this artifact yet. The libobs it builds against is
-  # whatever the PPA offers for 26.04: a plugin built against libobs 33 is
-  # rejected by OBS 32 (modules compiled with a newer libobs are refused).
+  # 6.9) is compiled in here. The release packs this build as the Ubuntu 26.04
+  # zips (OBS 33 and OBS 32 layouts). It builds against the libobs the PPA
+  # offers for 26.04 and fails if that becomes libobs 33, which OBS 32 would
+  # reject (modules compiled with a newer libobs are refused).
   ubuntu-26:
-    name: Ubuntu 26.04 x86_64 (OBS 33, not blocking)
+    name: Ubuntu 26.04 x86_64
     runs-on: ubuntu-26.04
-    continue-on-error: true
     defaults:
       run:
         shell: bash
@@ -196,11 +194,22 @@ jobs:
           curl -fsSL -o obs-studio.deb "$base/$deb_path"
           echo "$deb_sha  obs-studio.deb" | sha256sum -c -
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends             build-essential cmake ninja-build pkg-config ccache             libsimde-dev ./obs-studio.deb             qt6-base-dev libqt6svg6-dev qt6-base-private-dev             libcurl4-openssl-dev
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config ccache \
+            libsimde-dev ./obs-studio.deb \
+            qt6-base-dev libqt6svg6-dev qt6-base-private-dev \
+            libcurl4-openssl-dev
           # The OpenGL ES headers moved between Ubuntu releases.
           sudo apt-get install -y --no-install-recommends libgles2-mesa-dev || sudo apt-get install -y --no-install-recommends libgles-dev
           qmake6 -query QT_VERSION || true
           grep -E "define LIBOBS_API_(MAJOR|MINOR)_VER" /usr/include/obs/obs-config.h
+          # OBS refuses a module compiled with a newer libobs, so this build must
+          # stay on libobs 32 while the zips also serve OBS 32.
+          api_major="$(awk '$2=="LIBOBS_API_MAJOR_VER" {print $3}' /usr/include/obs/obs-config.h)"
+          if [ "$api_major" -gt 32 ]; then
+            echo "::error::the PPA now has libobs $api_major: a plugin built against it is rejected by OBS 32. Decide before building against it."
+            exit 1
+          fi
 
       - name: Configure
         run: cmake --preset ubuntu-ci-x86_64

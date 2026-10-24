@@ -1,7 +1,8 @@
 name: Release
 
 # Runs when a version tag is pushed: checks the tag against buildspec.json
-# and CHANGELOG.md, builds and tests the three platforms exactly like
+# and CHANGELOG.md, builds and tests Windows, macOS and Ubuntu (24.04 and
+# 26.04) exactly like
 # build.yml (it is called as a reusable workflow; its Ubuntu job installs
 # libcurl4-openssl-dev), then publishes a GitHub release with the zipped
 # plugin for each platform and SHA256SUMS.txt. Only the final job may write to
@@ -96,7 +97,9 @@ jobs:
           set -euo pipefail
           mkdir -p dist stage/windows-obs32/obs-multiview-pro/bin/64bit stage/windows-obs33/obs-multiview-pro \
             stage/ubuntu/obs-multiview-pro/bin/64bit stage/windows-obs32/obs-multiview-pro/data/locale \
-            stage/windows-obs33/obs-multiview-pro/data/locale stage/ubuntu/obs-multiview-pro/data/locale
+            stage/windows-obs33/obs-multiview-pro/data/locale stage/ubuntu/obs-multiview-pro/data/locale \
+            stage/ubuntu26-obs32/obs-multiview-pro/bin/64bit stage/ubuntu26-obs32/obs-multiview-pro/data/locale \
+            stage/ubuntu26-obs33/obs-multiview-pro/data/locale
 
           # Locale files of an artifact (rundir layout obs-multiview-pro/locale/).
           copy_locale() {
@@ -137,6 +140,27 @@ jobs:
           cp "$lin" stage/ubuntu/obs-multiview-pro/bin/64bit/
           copy_locale "$lin_dir" stage/ubuntu
           (cd stage/ubuntu && zip -r -X "../../dist/obs-multiview-pro-$VERSION-ubuntu-24.04-x86_64.zip" obs-multiview-pro)
+
+          # Ubuntu 26.04 (Qt >= 6.10, Wayland compiled in): same .so in two
+          # layouts, like Windows. OBS 33 reads obs-multiview-pro/obs-multiview-pro.so
+          # under $XDG_DATA_HOME/obs-studio/plugins; OBS 32 reads
+          # obs-multiview-pro/bin/64bit/ under ~/.config/obs-studio/plugins.
+          lin26_dir=artifacts/obs-multiview-pro-ubuntu-26.04-x86_64
+          lin26="$lin26_dir/obs-multiview-pro.so"
+          test -f "$lin26" || { echo "::error::Ubuntu 26.04 artifact has no obs-multiview-pro.so"; exit 1; }
+          cp "$lin26" stage/ubuntu26-obs32/obs-multiview-pro/bin/64bit/
+          cp "$lin26" stage/ubuntu26-obs33/obs-multiview-pro/
+          copy_locale "$lin26_dir" stage/ubuntu26-obs32
+          copy_locale "$lin26_dir" stage/ubuntu26-obs33
+          (cd stage/ubuntu26-obs32 && zip -r -X "../../dist/obs-multiview-pro-$VERSION-ubuntu-26.04-x86_64-obs32.zip" obs-multiview-pro)
+          (cd stage/ubuntu26-obs33 && zip -r -X "../../dist/obs-multiview-pro-$VERSION-ubuntu-26.04-x86_64-obs33.zip" obs-multiview-pro)
+          unzip -Z1 "dist/obs-multiview-pro-$VERSION-ubuntu-26.04-x86_64-obs32.zip" | grep -qx 'obs-multiview-pro/bin/64bit/obs-multiview-pro.so' \
+            || { echo "::error::the Ubuntu 26.04 obs32 zip lacks bin/64bit/obs-multiview-pro.so"; exit 1; }
+          unzip -Z1 "dist/obs-multiview-pro-$VERSION-ubuntu-26.04-x86_64-obs33.zip" | grep -qx 'obs-multiview-pro/obs-multiview-pro.so' \
+            || { echo "::error::the Ubuntu 26.04 obs33 zip lacks obs-multiview-pro.so in the plugin folder"; exit 1; }
+          if unzip -Z1 "dist/obs-multiview-pro-$VERSION-ubuntu-26.04-x86_64-obs33.zip" | grep -q '/bin/64bit/'; then
+            echo "::error::the Ubuntu 26.04 obs33 zip must not hold the legacy bin/64bit folder"; exit 1
+          fi
 
           (cd dist && sha256sum *.zip > SHA256SUMS.txt)
           ls -l dist
