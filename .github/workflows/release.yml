@@ -83,15 +83,20 @@ jobs:
         run: find artifacts -type f -exec ls -l {} \;
 
       # Layouts: unzip the Windows and Linux archives into the OBS plugins
-      # folder (obs-multiview-pro/bin/64bit/<binary> and
-      # obs-multiview-pro/data/locale/*.ini, where OBS looks for a plugin's
-      # data); the macOS archive holds the .plugin bundle (locale files in
+      # folder; the macOS archive holds the .plugin bundle (locale files in
       # Contents/Resources/locale), zipped with ditto by build.yml.
+      # Windows has two zips with the same DLL (the build runs on OBS 33 as it
+      # is): OBS 33 reads obs-multiview-pro/obs-multiview-pro.dll and
+      # obs-multiview-pro/data/locale/*.ini and flags the old bin/64bit folder
+      # as legacy (it stops loading in a future version); OBS 32 reads only
+      # obs-multiview-pro/bin/64bit/<binary>. Linux keeps bin/64bit, which
+      # OBS 33 still loads as legacy.
       - name: Build release assets
         run: |
           set -euo pipefail
-          mkdir -p dist stage/windows/obs-multiview-pro/bin/64bit stage/ubuntu/obs-multiview-pro/bin/64bit \
-            stage/windows/obs-multiview-pro/data/locale stage/ubuntu/obs-multiview-pro/data/locale
+          mkdir -p dist stage/windows-obs32/obs-multiview-pro/bin/64bit stage/windows-obs33/obs-multiview-pro \
+            stage/ubuntu/obs-multiview-pro/bin/64bit stage/windows-obs32/obs-multiview-pro/data/locale \
+            stage/windows-obs33/obs-multiview-pro/data/locale stage/ubuntu/obs-multiview-pro/data/locale
 
           # Locale files of an artifact (rundir layout obs-multiview-pro/locale/).
           copy_locale() {
@@ -101,12 +106,26 @@ jobs:
 
           win=artifacts/obs-multiview-pro-windows-x64
           test -f "$win/obs-multiview-pro.dll" || { echo "::error::Windows artifact has no obs-multiview-pro.dll"; exit 1; }
-          cp "$win/obs-multiview-pro.dll" stage/windows/obs-multiview-pro/bin/64bit/
+          cp "$win/obs-multiview-pro.dll" stage/windows-obs32/obs-multiview-pro/bin/64bit/
+          cp "$win/obs-multiview-pro.dll" stage/windows-obs33/obs-multiview-pro/
           if [ -f "$win/obs-multiview-pro.pdb" ]; then
-            cp "$win/obs-multiview-pro.pdb" stage/windows/obs-multiview-pro/bin/64bit/
+            cp "$win/obs-multiview-pro.pdb" stage/windows-obs32/obs-multiview-pro/bin/64bit/
+            cp "$win/obs-multiview-pro.pdb" stage/windows-obs33/obs-multiview-pro/
           fi
-          copy_locale "$win" stage/windows
-          (cd stage/windows && zip -r -X "../../dist/obs-multiview-pro-$VERSION-windows-x64.zip" obs-multiview-pro)
+          copy_locale "$win" stage/windows-obs32
+          copy_locale "$win" stage/windows-obs33
+          (cd stage/windows-obs32 && zip -r -X "../../dist/obs-multiview-pro-$VERSION-windows-x64-obs32.zip" obs-multiview-pro)
+          (cd stage/windows-obs33 && zip -r -X "../../dist/obs-multiview-pro-$VERSION-windows-x64-obs33.zip" obs-multiview-pro)
+
+          # Each Windows zip must hold exactly its own layout: a DLL in both
+          # places would make OBS 33 log a "skipping legacy plugin" warning.
+          unzip -Z1 "dist/obs-multiview-pro-$VERSION-windows-x64-obs32.zip" | grep -qx 'obs-multiview-pro/bin/64bit/obs-multiview-pro.dll' \
+            || { echo "::error::the obs32 zip lacks bin/64bit/obs-multiview-pro.dll"; exit 1; }
+          unzip -Z1 "dist/obs-multiview-pro-$VERSION-windows-x64-obs33.zip" | grep -qx 'obs-multiview-pro/obs-multiview-pro.dll' \
+            || { echo "::error::the obs33 zip lacks obs-multiview-pro.dll in the plugin folder"; exit 1; }
+          if unzip -Z1 "dist/obs-multiview-pro-$VERSION-windows-x64-obs33.zip" | grep -q '/bin/64bit/'; then
+            echo "::error::the obs33 zip must not hold the legacy bin/64bit folder"; exit 1
+          fi
 
           mac=artifacts/obs-multiview-pro-macos-universal/obs-multiview-pro.plugin.zip
           test -f "$mac" || { echo "::error::macOS artifact has no obs-multiview-pro.plugin.zip"; exit 1; }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Runs on OBS Studio 33.0.0 (runtime-tested on Windows 11, Direct3D 11); still needs OBS 32.1 or newer.
+- Windows: two zips with the same plugin, one for OBS 33 or newer (the new plugin folder layout) and one for OBS 32.1 and 32.2 (`bin\64bit`). OBS 33 flags the old layout as legacy.
+
 ## 1.1.0
 
 - Audio meters on every scene tile: thin L/R bars with the loudest audio source of the scene (Settings and the window menu, on by default).

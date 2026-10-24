@@ -30,10 +30,11 @@ Parte solo al push di un tag `v*.*.*`; per ora il tag deve essere numerico, `vMA
 
 Asset (layout pensato per estrarre lo zip direttamente nella cartella dei plugin):
 
-- `obs-multiview-pro-<versione>-windows-x64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.dll` + `.pdb` e `obs-multiview-pro/data/locale/*.ini` (in `C:\ProgramData\obs-studio\plugins\`).
+- `obs-multiview-pro-<versione>-windows-x64-obs33.zip`: `obs-multiview-pro/obs-multiview-pro.dll` + `.pdb` e `obs-multiview-pro/data/locale/*.ini` (layout nuovo di OBS 33, in `C:\ProgramData\obs-studio\plugins\`).
+- `obs-multiview-pro-<versione>-windows-x64-obs32.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.dll` + `.pdb` e `obs-multiview-pro/data/locale/*.ini` (layout per OBS 32; OBS 33 lo segna "Legacy"). La DLL e' la stessa dei due zip (compilata contro OBS 32.1.2, provata anche su OBS 33.0.0); il job `release` controlla che ogni zip abbia solo il proprio layout (una DLL in entrambe le cartelle farebbe dire a OBS 33 "skipping legacy plugin").
 - `obs-multiview-pro-<versione>-macos-universal.zip`: il bundle `obs-multiview-pro.plugin` zippato con `ditto` (artifact di `build.yml`, rinominato); i file di lingua sono in `Contents/Resources/locale/` e il job macOS fallisce se manca `en-US.ini`.
 - `obs-multiview-pro-<versione>-ubuntu-24.04-x86_64.zip`: `obs-multiview-pro/bin/64bit/obs-multiview-pro.so` e `obs-multiview-pro/data/locale/*.ini`.
-- `SHA256SUMS.txt`: `sha256sum` dei tre zip.
+- `SHA256SUMS.txt`: `sha256sum` dei quattro zip.
 
 File di lingua (`data/locale/*.ini`): `target_install_resources` del template li copia nella rundir accanto al plugin (`rundir/<CONFIG>/obs-multiview-pro/locale/` su Windows e Linux) e nel bundle macOS (`Contents/Resources/locale/`). Il job `release` li sposta in `obs-multiview-pro/data/locale/`, la cartella dati che OBS associa a `obs-multiview-pro/bin/64bit/` (`OBSBasic.cpp`, `AddExtraModulePaths`), e fallisce se un artifact Windows o Linux non contiene `en-US.ini`. Senza i file di lingua il plugin funziona ma menu e riquadri mostrano le chiavi (`Menu.Layout`) e il log dice `locale files not found`.
 
@@ -53,7 +54,7 @@ Da controllare al primo tag:
 
 ## Stato e aree mai eseguite
 
-`build.yml` compila e lancia i test unitari su Windows, macOS e Ubuntu a ogni push. I test non richiedono OBS ne' Qt: **solo Windows 11 con OBS 32.2 e' stato provato in esecuzione**. Su macOS e Linux il plugin e' compilato (con `-Werror`) ma non e' mai stato avviato dentro OBS.
+`build.yml` compila e lancia i test unitari su Windows, macOS e Ubuntu a ogni push. I test non richiedono OBS ne' Qt: **solo Windows 11 con OBS 32.2 e 33.0.0 e' stato provato in esecuzione**. Su macOS e Linux il plugin e' compilato (con `-Werror`) ma non e' mai stato avviato dentro OBS.
 
 - Creazione del display in `src/multiview_window.cpp`: macOS (`gs_window.view = (id)winId()`, Metal) e Linux X11 (`gs_window.id` + `obs_get_nix_platform_display()`, OpenGL). Wayland funziona solo con Qt >= 6.9; la release per Ubuntu usa Qt 6.4, quindi sotto Wayland la finestra resta vuota (avviare OBS con `QT_QPA_PLATFORM=xcb`).
 - Font dei testi (`Helvetica` su macOS, `Monospace`/`Sans Serif` su Linux): le metriche delle etichette possono differire da Windows.

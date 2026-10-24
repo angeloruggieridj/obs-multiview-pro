@@ -53,15 +53,18 @@
 
 ### Install
 
-Download the zip for your system from [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) and unzip it into the plugins folder. Close OBS first. Needs OBS Studio 32.1 or newer.
+Download the zip for your system from [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) and unzip it into the plugins folder. Close OBS first. Needs OBS Studio 32.1 or newer (tested on 32.2 and 33.0.0).
 
 | OS | Zip | Unzip into |
 | --- | --- | --- |
-| Windows | `…-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| Windows, OBS 33 or newer | `…-windows-x64-obs33.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| Windows, OBS 32.1 or 32.2 | `…-windows-x64-obs32.zip` | `C:\ProgramData\obs-studio\plugins\` |
 | macOS | `…-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` |
 | Linux | `…-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` |
 
 `SHA256SUMS.txt` lists the checksums. The binaries are not signed: on macOS allow the plugin in *System Settings → Privacy & Security*, or run `xattr -dr com.apple.quarantine obs-multiview-pro.plugin`. The Linux zip is for Ubuntu 24.04 with the OBS Studio PPA (not Flatpak or Snap).
+
+The two Windows zips hold the same plugin and differ only in folder layout: OBS 33 reads `obs-multiview-pro\obs-multiview-pro.dll` and marks the old `bin\64bit` layout as *Legacy*, OBS 32 reads only `bin\64bit`. Install one of them; when you move from OBS 32 to 33, delete the old `obs-multiview-pro` folder first and unzip the OBS 33 zip. On Linux, OBS 33 loads the zip's layout as legacy for now.
 
 ### Use
 
@@ -87,7 +90,7 @@ Scenes with *Show in Multiview* off are skipped, like the native multiview.
 
 ### Limits
 
-- Runtime-tested on **Windows 11 with OBS 32.2** only. macOS and Linux builds compile and pass the unit tests on CI but have never been run: reports are welcome.
+- Runtime-tested on **Windows 11 with OBS 32.2 and 33.0.0** only (Direct3D 11). macOS and Linux builds compile and pass the unit tests on CI but have never been run: reports are welcome.
 - Linux under Wayland: the window stays empty (needs Qt 6.9, the build uses 6.4). Start OBS with `QT_QPA_PLATFORM=xcb`.
 - Meters: program follows the program mix (track 1); preview and scene tiles show the loudest audio source of their scene (post-fader; the audio sources the OBS mixer lists for a scene, plus those of nested scenes and groups). A scene has no audio of its own: sources that only play on air (media set to *Restart when activated*) stay silent off air. At most 128 metered sources per window (mixer, preview, then tiles in order); the rest are noted in the OBS log.
 - Mixer tile: at most 7 sources beside PGM (global devices first, then the program scene, then the preview scene); the rest are left out and noted in the OBS log.
@@ -136,15 +139,18 @@ GPL-2.0-or-later, see [LICENSE](LICENSE).
 
 ### Installazione
 
-Scarica lo zip per il tuo sistema da [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) ed estrailo nella cartella dei plugin, a OBS chiuso. Serve OBS Studio 32.1 o successivo.
+Scarica lo zip per il tuo sistema da [Releases](https://github.com/angeloruggieridj/obs-multiview-pro/releases) ed estrailo nella cartella dei plugin, a OBS chiuso. Serve OBS Studio 32.1 o successivo (provato su 32.2 e 33.0.0).
 
 | Sistema | Zip | Estrai in |
 | --- | --- | --- |
-| Windows | `…-windows-x64.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| Windows, OBS 33 o successivo | `…-windows-x64-obs33.zip` | `C:\ProgramData\obs-studio\plugins\` |
+| Windows, OBS 32.1 o 32.2 | `…-windows-x64-obs32.zip` | `C:\ProgramData\obs-studio\plugins\` |
 | macOS | `…-macos-universal.zip` | `~/Library/Application Support/obs-studio/plugins/` |
 | Linux | `…-ubuntu-24.04-x86_64.zip` | `~/.config/obs-studio/plugins/` |
 
 `SHA256SUMS.txt` contiene i checksum. I binari non sono firmati: su macOS consenti il plugin in *Impostazioni di Sistema → Privacy e sicurezza*, oppure esegui `xattr -dr com.apple.quarantine obs-multiview-pro.plugin`. Lo zip per Linux è per Ubuntu 24.04 con il PPA di OBS Studio (non Flatpak né Snap).
+
+I due zip per Windows contengono lo stesso plugin e cambiano solo la struttura delle cartelle: OBS 33 legge `obs-multiview-pro\obs-multiview-pro.dll` e segna la vecchia struttura `bin\64bit` come *Legacy*, OBS 32 legge solo `bin\64bit`. Installane uno solo; passando da OBS 32 a 33 elimina prima la vecchia cartella `obs-multiview-pro` ed estrai lo zip per OBS 33. Su Linux, OBS 33 carica per ora la struttura dello zip come legacy.
 
 ### Uso
 
@@ -170,7 +176,7 @@ Le scene con *Mostra in Vista multipla* disattivato vengono saltate, come nella 
 
 ### Limiti
 
-- Provato in esecuzione solo su **Windows 11 con OBS 32.2**. Le build per macOS e Linux compilano e passano i test unitari in CI ma non sono mai state avviate: le segnalazioni sono benvenute.
+- Provato in esecuzione solo su **Windows 11 con OBS 32.2 e 33.0.0** (Direct3D 11). Le build per macOS e Linux compilano e passano i test unitari in CI ma non sono mai state avviate: le segnalazioni sono benvenute.
 - Linux con Wayland: la finestra resta vuota (serve Qt 6.9, la build usa la 6.4). Avvia OBS con `QT_QPA_PLATFORM=xcb`.
 - Meter: il programma segue il mix del programma (traccia 1); l'anteprima e i riquadri scena mostrano la sorgente audio più forte della loro scena (dopo il fader; le sorgenti audio che il mixer di OBS elenca per una scena, più quelle delle scene annidate e dei gruppi). Una scena non ha audio proprio: le sorgenti che suonano solo in onda (file multimediali con *Riavvia la riproduzione quando la fonte torna attiva*) restano mute fuori onda. Al massimo 128 sorgenti con meter per finestra (mixer, anteprima, poi i riquadri in ordine); le altre sono segnalate nel log di OBS.
 - Riquadro mixer: al massimo 7 sorgenti oltre a PGM (prima i dispositivi globali, poi la scena in programma, poi quella in anteprima); le altre restano fuori e il log di OBS lo segnala.
