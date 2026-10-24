@@ -177,38 +177,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Ubuntu 26.04 runners ask apt for the amd64v3 indexes, which the OBS PPA
+      # leaves empty, so apt never sees the PPA's obs-studio (it offers Ubuntu's
+      # older one). The package is therefore taken from the PPA's own amd64
+      # index (fetched over HTTPS, file checked against its SHA256) and
+      # installed with apt, which pulls the dependencies from Ubuntu.
       - name: Install build dependencies
         run: |
-          sudo add-apt-repository --yes ppa:obsproject/obs-studio
-          # Prefer the PPA over Ubuntu's own (older) obs-studio.
-          printf 'Package: *\nPin: release o=LP-PPA-obsproject-obs-studio\nPin-Priority: 1001\n' \
-            | sudo tee /etc/apt/preferences.d/obsproject-ppa
-          ls /etc/apt/sources.list.d
-          dpkg --print-architecture; dpkg --print-foreign-architectures; apt-config dump | grep -i architectures || true
-          ppa_ready() { [[ "$(apt-cache policy obs-studio | awk '/Candidate:/ {print $2}')" == *obsproject* ]]; }
-          for attempt in 1 2 3 4 5 6; do
-            sudo apt-get update || true
-            apt-cache policy obs-studio libobs-dev | sed -n '1,14p'
-            # Ubuntu 26.04 runners list the amd64v3 architecture, for which the
-            # PPA has no packages; its plain amd64 ones are what we want.
-            if ! ppa_ready; then
-              echo 'APT::Architectures { "amd64"; };' | sudo tee /etc/apt/apt.conf.d/99obs-architectures
-              sudo apt-get update || true
-              apt-cache policy obs-studio | sed -n '1,8p'
-            fi
-            ppa_ready && break
-            echo "OBS Studio PPA index not available (attempt $attempt of 6), retrying in 30 s"
-            sleep 30
-          done
-          ppa_ready || { echo "::error::The OBS Studio PPA is not available: not building against another libobs."; exit 1; }
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config ccache \
-            libsimde-dev obs-studio \
-            qt6-base-dev libqt6svg6-dev qt6-base-private-dev \
-            libcurl4-openssl-dev
+          set -euo pipefail
+          base=https://ppa.launchpadcontent.net/obsproject/obs-studio/ubuntu
+          curl -fsSL "$base/dists/resolute/main/binary-amd64/Packages.gz" | gunzip > Packages
+          field() { awk -v pkg="$1" -v key="$2" '$1=="Package:" {p=($2==pkg)} p && $1==key":" {print $2; exit}' Packages; }
+          deb_path="$(field obs-studio Filename)"
+          deb_sha="$(field obs-studio SHA256)"
+          deb_version="$(field obs-studio Version)"
+          [ -n "$deb_path" ] && [ -n "$deb_sha" ] || { echo "::error::obs-studio is not in the OBS Studio PPA amd64 index for resolute."; exit 1; }
+          echo "OBS Studio PPA package: $deb_version"
+          curl -fsSL -o obs-studio.deb "$base/$deb_path"
+          echo "$deb_sha  obs-studio.deb" | sha256sum -c -
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends             build-essential cmake ninja-build pkg-config ccache             libsimde-dev ./obs-studio.deb             qt6-base-dev libqt6svg6-dev qt6-base-private-dev             libcurl4-openssl-dev
           # The OpenGL ES headers moved between Ubuntu releases.
           sudo apt-get install -y --no-install-recommends libgles2-mesa-dev || sudo apt-get install -y --no-install-recommends libgles-dev
           qmake6 -query QT_VERSION || true
+          grep -E "define LIBOBS_API_(MAJOR|MINOR)_VER" /usr/include/obs/obs-config.h
 
       - name: Configure
         run: cmake --preset ubuntu-ci-x86_64
