@@ -180,15 +180,19 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo add-apt-repository --yes ppa:obsproject/obs-studio
+          # Prefer the PPA over Ubuntu's own (older) obs-studio.
+          printf 'Package: *\nPin: release o=LP-PPA-obsproject-obs-studio\nPin-Priority: 1001\n' \
+            | sudo tee /etc/apt/preferences.d/obsproject-ppa
+          ls /etc/apt/sources.list.d
           ppa_ready() { [[ "$(apt-cache policy obs-studio | awk '/Candidate:/ {print $2}')" == *obsproject* ]]; }
           for attempt in 1 2 3 4 5 6; do
             sudo apt-get update || true
+            apt-cache policy obs-studio libobs-dev | sed -n '1,14p'
             ppa_ready && break
             echo "OBS Studio PPA index not available (attempt $attempt of 6), retrying in 30 s"
             sleep 30
           done
           ppa_ready || { echo "::error::The OBS Studio PPA is not available: not building against another libobs."; exit 1; }
-          apt-cache policy obs-studio | sed -n '1,4p'
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config ccache \
             libsimde-dev obs-studio \
