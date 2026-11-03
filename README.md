@@ -1,30 +1,32 @@
+<div align="center">
+
 # 🖥️ Multiview Pro for OBS
 
 **A broadcast-style multiview for OBS Studio: every scene live, audio meters, and ON AIR / REC / clock / mixer tiles in the same grid.**
-
 **Un multiview da regia per OBS Studio: tutte le scene in diretta, meter audio e riquadri IN ONDA / REC / orologio / mixer nella stessa griglia.**
+
+[![Build](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml/badge.svg)](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml)
+[![Latest release](https://img.shields.io/github/v/release/angeloruggieridj/obs-multiview-pro?sort=date)](https://github.com/angeloruggieridj/obs-multiview-pro/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/angeloruggieridj/obs-multiview-pro/total)](https://github.com/angeloruggieridj/obs-multiview-pro/releases)
+[![License: GPL v2+](https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg)](LICENSE)
+
+![OBS Studio](https://img.shields.io/badge/OBS%20Studio-32.1%2B-302E31?logo=obsstudio&logoColor=white)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-lightgrey)
+![Tested](https://img.shields.io/badge/runtime%20tested-Windows%2011-informational)
 
 [English](#english) · [Italiano](#italiano)
 
-[![Build](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml/badge.svg)](https://github.com/angeloruggieridj/obs-multiview-pro/actions/workflows/build.yml)
-[![Release](https://img.shields.io/github/v/release/angeloruggieridj/obs-multiview-pro)](https://github.com/angeloruggieridj/obs-multiview-pro/releases/latest)
-![License](https://img.shields.io/badge/license-GPL%20v2%2B-blue)
-![OBS Studio](https://img.shields.io/badge/OBS%20Studio-32.1%2B-302E31)
-![Tested](https://img.shields.io/badge/runtime%20tested-Windows%2011-informational)
+<img src="docs/images/02-status8.png" alt="Multiview Pro with ON AIR, REC, clock and mixer tiles" width="860">
 
-<p align="center"><img src="docs/images/02-status8.png" alt="Multiview Pro with ON AIR, REC, clock and mixer tiles" width="860"></p>
+<img src="docs/images/01-scenes8.png" alt="Scenes-only layout, native look" width="420">
+<img src="docs/images/03-scenes24.png" alt="24-scene layout" width="420">
 
-<p align="center">
-  <img src="docs/images/01-scenes8.png" alt="Scenes-only layout, native look" width="420">
-  <img src="docs/images/03-scenes24.png" alt="24-scene layout" width="420">
-</p>
+<img src="docs/images/05-settings.png" alt="Settings" width="330">
+<img src="docs/images/07-updates.png" alt="Updates and change log" width="330">
 
-<p align="center">
-  <img src="docs/images/05-settings.png" alt="Settings" width="330">
-  <img src="docs/images/07-updates.png" alt="Updates and change log" width="330">
-</p>
+<sub>Demo content and demo status values. Top: 8 tiles + status. Middle: scenes only (native look) and 24 scenes. Bottom: settings and updates.</sub>
 
-*Demo content and demo status values. Top: 8 tiles + status. Middle: scenes only (native look) and 24 scenes. Bottom: settings and updates.*
+</div>
 
 ---
 
