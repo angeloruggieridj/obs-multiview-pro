@@ -162,9 +162,10 @@ jobs:
   # OBS 33 dropped Ubuntu 24.04: its Linux builds and the PPA target 26.04,
   # which has Qt >= 6.10, so the Wayland branch of multiview_window.cpp (Qt >=
   # 6.9) is compiled in here. The release packs this build as the Ubuntu 26.04
-  # zips (OBS 33 and OBS 32 layouts). It builds against the libobs the PPA
-  # offers for 26.04 and fails if that becomes libobs 33, which OBS 32 would
-  # reject (modules compiled with a newer libobs are refused).
+  # zip (OBS 33 layout). The PPA now offers only OBS 33 for 26.04, so this
+  # builds against libobs 33 (a module compiled with it is refused by OBS 32,
+  # which the Ubuntu 24.04 job and the Windows and macOS builds cover) and
+  # fails if the PPA moves to a different libobs major.
   ubuntu-26:
     name: Ubuntu 26.04 x86_64
     runs-on: ubuntu-26.04
@@ -203,11 +204,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends libgles2-mesa-dev || sudo apt-get install -y --no-install-recommends libgles-dev
           qmake6 -query QT_VERSION || true
           grep -E "define LIBOBS_API_(MAJOR|MINOR)_VER" /usr/include/obs/obs-config.h
-          # OBS refuses a module compiled with a newer libobs, so this build must
-          # stay on libobs 32 while the zips also serve OBS 32.
+          # The only zip made from this build is for OBS 33 and newer; a
+          # different libobs major means the release layout must be reviewed.
           api_major="$(awk '$2=="LIBOBS_API_MAJOR_VER" {print $3}' /usr/include/obs/obs-config.h)"
-          if [ "$api_major" -gt 32 ]; then
-            echo "::error::the PPA now has libobs $api_major: a plugin built against it is rejected by OBS 32. Decide before building against it."
+          if [ "$api_major" -ne 33 ]; then
+            echo "::error::the PPA has libobs $api_major, expected 33: review the Ubuntu 26.04 zip layout and the OBS versions it supports."
             exit 1
           fi
 
